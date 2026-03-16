@@ -28,19 +28,15 @@ export default function Layout({ children }) {
         alignItems: "center",
         padding: "12px 24px",
       }}>
-        {/* Left: UA Logo */}
-        <div>
+        {/* Left: UA Logo + U of A */}
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <img
-            src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/34/University_of_Arizona_logo.svg/200px-University_of_Arizona_logo.svg.png"
+            src="/src/assets/ua_logo.png"
             alt="University of Arizona"
-            style={{ height: "48px", width: "auto" }}
-            onError={(e) => {
-              e.target.style.display = "none";
-              e.target.nextSibling.style.display = "block";
-            }}
+            style={{ height: "42px", width: "auto" }}
           />
-          <span style={{ display: "none", color: "#1a2744", fontWeight: "bold", fontSize: "12px" }}>
-            U of A
+          <span style={{ color: "#1a2744", fontWeight: "bold", fontSize: "14px", fontFamily: "Georgia, serif" }}>
+            University of Arizona
           </span>
         </div>
 
@@ -54,7 +50,7 @@ export default function Layout({ children }) {
           textAlign: "center",
           margin: 0,
         }}>
-          WEBSITE NAME
+          DEMENTIA HELPER
         </h1>
 
         {/* Right: Profile + Hamburger */}

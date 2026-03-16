@@ -5,6 +5,9 @@ import Layout from "./components/layout/Layout";
 import Home from "./components/home/home";
 import CreateAccount from "./components/account/CreateAccount";
 import UpdateAccount from "./components/account/UpdateAccount";
+import GamesLanding from "./components/games/GamesLanding";
+import MemoryLane from "./components/games/MemoryLane";
+import FamilyTree from "./components/games/FamilyTree";
 
 function App() {
   return (
@@ -17,7 +20,10 @@ function App() {
           {/* placeholders */}
           <Route path="/reminders" element={<div className="text-[#1a2744] p-4">Reminders — Coming Soon</div>} />
           <Route path="/wellness" element={<div className="text-[#1a2744] p-4">Wellness — Coming Soon</div>} />
-          <Route path="/games" element={<div className="text-[#1a2744] p-4">Games — Coming Soon</div>} />
+          {/* Games */}
+          <Route path="/games" element={<GamesLanding />} />
+          <Route path="/games/memory-lane" element={<MemoryLane />} />
+          <Route path="/games/family-tree" element={<FamilyTree />} />
           <Route path="/about" element={<div className="text-[#1a2744] p-4">About Us — Coming Soon</div>} />
         </Routes>
       </Layout>
