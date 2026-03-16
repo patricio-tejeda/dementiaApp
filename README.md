@@ -26,7 +26,7 @@ Activate it:
 
 Windows:
 ```bash
- .\.venv\bin\activate
+ .venv\Scripts\activate
 ```
 
 macOS / Linux:
