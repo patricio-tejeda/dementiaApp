@@ -1,35 +1,34 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import "./App.css";
+import { Routes, Route } from "react-router-dom";
+import { AuthProvider } from "./context/AuthContext";
+import Layout from "./components/layout/Layout";
+import Home from "./components/home/home";
+import CreateAccount from "./components/account/CreateAccount";
+import UpdateAccount from "./components/account/UpdateAccount";
+import GamesLanding from "./components/games/GamesLanding";
+import MemoryLane from "./components/games/MemoryLane";
+import FamilyTree from "./components/games/FamilyTree";
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+    <AuthProvider>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/create-account" element={<CreateAccount />} />
+          <Route path="/update-account" element={<UpdateAccount />} />
+          {/* placeholders */}
+          <Route path="/reminders" element={<div className="text-[#1a2744] p-4">Reminders — Coming Soon</div>} />
+          <Route path="/wellness" element={<div className="text-[#1a2744] p-4">Wellness — Coming Soon</div>} />
+          {/* Games */}
+          <Route path="/games" element={<GamesLanding />} />
+          <Route path="/games/memory-lane" element={<MemoryLane />} />
+          <Route path="/games/family-tree" element={<FamilyTree />} />
+          <Route path="/about" element={<div className="text-[#1a2744] p-4">About Us — Coming Soon</div>} />
+        </Routes>
+      </Layout>
+    </AuthProvider>
+  );
 }
 
-export default App
+export default App;
