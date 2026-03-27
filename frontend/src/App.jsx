@@ -1,3 +1,14 @@
+import { useState } from 'react'
+import reactLogo from './assets/react.svg'
+import viteLogo from '/vite.svg'
+import './App.css'
+import PatientProfileSetup from "./components/profile/PatientProfileSetup.jsx";
+
+// replace the fetch headers with this once auth is merged
+// headers: {
+//   "Content-Type": "application/json",
+//   "Authorization": `Token ${token}`, // or `Bearer ${token}` if using JWT
+// },
 import "./App.css";
 import { Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
@@ -14,6 +25,11 @@ function App() {
     <AuthProvider>
       <Layout>
         <Routes>
+          <Route path="/profile-setup" element={<PatientProfileSetup />} />
+        </Routes>
+      </Layout>
+    </AuthProvider>
+  )
           <Route path="/" element={<Home />} />
           <Route path="/create-account" element={<CreateAccount />} />
           <Route path="/update-account" element={<UpdateAccount />} />
