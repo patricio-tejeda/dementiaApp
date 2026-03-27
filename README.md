@@ -41,6 +41,11 @@ You should see (.venv) in your terminal.
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
+## Groq LLM Integration
+Create a `.env` file in the backend root and add:
+```GROQ_API_KEY=gsk_...```
+
+Get a free Groq API key at https://console.groq.com
 
 4️⃣ Apply database migrations
 ```bash

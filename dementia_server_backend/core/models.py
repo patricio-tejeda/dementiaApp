@@ -38,3 +38,9 @@ class InputInfoPage(models.Model):
     def __str__(self):
         return f"{self.title}: {self.answer[:50]}"
         
+class AIquestions(models.Model):
+    profile = models.OneToOneField(
+        PatientProfile, 
+        on_delete=models.CASCADE,
+        related_name = "ai_interview"
+    )
