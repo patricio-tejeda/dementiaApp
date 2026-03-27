@@ -26,4 +26,8 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('core.urls')),
     path('', include(router.urls))
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path("", include("core.urls")),
 ]
