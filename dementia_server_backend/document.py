@@ -30,7 +30,7 @@ document = loader.load()
 print(document)
 
 # glob -> matches file types; make show_progress=True to see the progress bar but must install tqdm
-dir_loader = DirectoryLoader("data/tesxtFiles", glob="**/*.txt", loader_cls=TextLoader, loader_kwargs={"encoding": "utf-8"}, show_progress=False)
+dir_loader = DirectoryLoader("data/textFiles", glob="**/*.txt", loader_cls=TextLoader, loader_kwargs={"encoding": "utf-8"}, show_progress=False)
 documents = dir_loader.load()
 print(documents)
 
