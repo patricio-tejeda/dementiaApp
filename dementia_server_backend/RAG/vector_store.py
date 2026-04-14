@@ -8,7 +8,8 @@ from chromadb.config import Settings
 import uuid
 from typing import List, Dict, Any, Tuple
 from sklearn.metrics.pairwise import cosine_similarity
-import sql_loader
+import dementia_server_backend.RAG.sql_loader as sql_loader
+from RAG.embedding import EmbeddingPipeline
 
 
 class VectorStore:

@@ -1,4 +1,5 @@
 # RAG Pipeline - Data injestion to database pipeline
+# before modularizing
 
 # for chunking ----------------------------------------
 from langchain_community.vectorstores import SQLiteVec
@@ -287,13 +288,25 @@ if groq_llm:
 llm = ChatGroq(groq_api_key = groq_api_key, model_name = "gemma2-9b-it", temperature=0.1, max_tokens=1024)
 
 # simple rag function - retrieve context + generate response
-def simple_rag(query, retriever, llm, top_k=3):
+# added a few extra parameters to implement more features, but so far they are unnecessary
+'''could add sources for the analyzation process to see if the llm found good sources on how to create
+multiple choice questions, but mainly the sources are from the given sql files, so it will tell you
+where in the file the info was found... still useful for testing accuracy'''
+def simple_rag(query, retriever, llm, top_k=3, min_score = 0.2, return_context = False):
     # retrieve the context
-    results = retriever.retrieve(query, top_k=top_k)
-    context = "\n\n".join([doc['content'] for doc in results]) if results else ""
+    results = retriever.retrieve(query, top_k=top_k, score_threshold = min_score)
+    context = "\n\n".join([doc['content'] for doc in results]) # if results else ""
     if not context:
         return "no relevant context found"
     
+    sources = [{
+        'source': doc['metadata'].get('source_file', doc['metadata'].get('source', 'unknown')),
+        'page': doc['metadata'].get('page', 'unkown'),
+        'score' : doc['similarity_score'],
+        'preview': doc['content'][:300] +'...'
+    } for doc in results]
+    confidence = max([doc['similarity_score']for doc in results])
+
     # generate the answer
     # prompt hardcoded for testing purposes
     # prompt = "What is the users' mother's name and date of birth?" # change this later to be randomized and the decision of the AI
@@ -304,10 +317,17 @@ def simple_rag(query, retriever, llm, top_k=3):
             
             Answer: """
     response = llm.invoke([prompt.format(context = context, query = query)])
-    return response.content
+
+    output = {
+        'answer': response.content,
+        'sources': sources,
+        'confidence': confidence
+    }
+
+    return output
 
 # call for testing purposes
-answer = simple_rag("What is the users' mother's name and date of birth?", rag_retriever, llm)
+answer = simple_rag("What is the users' mother's name and date of birth?", rag_retriever, llm, top_k=3, min_score=0.1, return_context=True) # can take out the last 3 parameters
 print(answer)
 
 # enhanced features for the rag pipeline
