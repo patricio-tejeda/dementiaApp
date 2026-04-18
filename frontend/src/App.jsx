@@ -12,6 +12,7 @@ import GamesLanding from "./components/games/GamesLanding";
 import MemoryLane from "./components/games/MemoryLane";
 import FamilyTree from "./components/games/FamilyTree";
 import MemoryQuiz from "./components/games/MemoryQuiz";
+import AdaptiveQuiz from "./components/games/AdaptiveQuiz";
 import PatientProfileSetup from "./components/profile/PatientProfileSetup.jsx";
 import DiaryPage from "./components/diary/DiaryPage.jsx";
 
@@ -31,6 +32,7 @@ function App() {
           <Route path="/games" element={<GamesLanding />} />
           <Route path="/games/memory-lane" element={<MemoryLane />} />
           <Route path="/games/memory-quiz" element={<MemoryQuiz />} />
+          <Route path="/games/adaptive-quiz" element={<AdaptiveQuiz />} />
           <Route path="/games/family-tree" element={<FamilyTree />} />
           <Route path="/about" element={<div className="text-[#1a2744] p-4">About Us — Coming Soon</div>} />
         </Routes>

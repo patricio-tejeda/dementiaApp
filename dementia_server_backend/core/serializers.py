@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import PatientProfile, InputInfoPage, DiaryEntry, GeneratedQuestion, AppUser
+from .models import PatientProfile, InputInfoPage, DiaryEntry, GeneratedQuestion, QuestionAttempt, AppUser
 from django.contrib.auth.hashers import make_password
 from django.core.exceptions import ValidationError
 from django.contrib.auth.password_validation import validate_password
@@ -44,10 +44,36 @@ class DiaryEntrySerializer(serializers.ModelSerializer):
 
 
 class GeneratedQuestionSerializer(serializers.ModelSerializer):
+    times_asked = serializers.SerializerMethodField()
+    times_correct = serializers.SerializerMethodField()
+    times_wrong = serializers.SerializerMethodField()
+
     class Meta:
         model = GeneratedQuestion
-        fields = ('id', 'profile', 'question_text', 'options', 'correct_answer', 'category', 'created_at')
+        fields = ('id', 'profile', 'question_text', 'options', 'correct_answer', 'category', 'created_at', 'times_asked', 'times_correct', 'times_wrong')
         read_only_fields = ('created_at',)
+
+    def get_times_asked(self, obj):
+        return obj.times_asked()
+
+    def get_times_correct(self, obj):
+        return obj.times_correct()
+
+    def get_times_wrong(self, obj):
+        return obj.times_wrong()
+
+
+class QuestionAttemptSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = QuestionAttempt
+        fields = ('id', 'question', 'selected_answer', 'is_correct', 'created_at')
+        read_only_fields = ('is_correct', 'created_at')
+
+    def create(self, validated_data):
+        question = validated_data['question']
+        selected = validated_data['selected_answer']
+        validated_data['is_correct'] = (selected == question.correct_answer)
+        return super().create(validated_data)
 
 
 class AppUserSerializer(serializers.ModelSerializer):

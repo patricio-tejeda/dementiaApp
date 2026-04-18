@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 
 const API_BASE = "http://localhost:8000";
 
-export default function MemoryQuiz() {
+export default function AdaptiveQuiz() {
   const [questions, setQuestions] = useState([]);
   const [current, setCurrent] = useState(0);
   const [selected, setSelected] = useState(null);
@@ -15,18 +15,19 @@ export default function MemoryQuiz() {
   const navigate = useNavigate();
 
   const profileId = 1;
+  const questionCount = 5;
 
   useEffect(() => {
     async function fetchQuestions() {
       try {
-        const res = await fetch(`${API_BASE}/api/questions/?profile=${profileId}`);
+        const res = await fetch(`${API_BASE}/api/questions/adaptive/?profile=${profileId}&count=${questionCount}`);
         if (!res.ok) throw new Error("Failed to load questions.");
         const data = await res.json();
-        if (data.length === 0) {
-          setError("No questions available yet. Please generate questions first.");
+        if (data.length === 0 || data.error) {
+          setError(data.error || "No questions available yet. Please generate questions first.");
+        } else {
+          setQuestions(data);
         }
-        // Shuffle for variety
-        setQuestions(data.sort(() => Math.random() - 0.5));
       } catch (err) {
         setError(err.message);
       } finally {
@@ -36,12 +37,26 @@ export default function MemoryQuiz() {
     fetchQuestions();
   }, []);
 
-  const handleSelect = (option) => {
+  const handleSelect = async (option) => {
     if (showResult) return;
     setSelected(option);
     setShowResult(true);
-    if (option === questions[current].correct_answer) {
-      setScore((s) => s + 1);
+
+    const isCorrect = option === questions[current].correct_answer;
+    if (isCorrect) setScore((s) => s + 1);
+
+    // Record attempt
+    try {
+      await fetch(`${API_BASE}/api/attempts/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: questions[current].id,
+          selected_answer: option,
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to record attempt:", err);
     }
   };
 
@@ -56,18 +71,29 @@ export default function MemoryQuiz() {
   };
 
   const handleRestart = () => {
-    setQuestions((prev) => [...prev].sort(() => Math.random() - 0.5));
+    setLoading(true);
+    setFinished(false);
     setCurrent(0);
     setSelected(null);
     setShowResult(false);
     setScore(0);
-    setFinished(false);
+    // Re-fetch — adaptive endpoint will re-rank based on new attempts
+    fetch(`${API_BASE}/api/questions/adaptive/?profile=${profileId}&count=${questionCount}`)
+      .then((res) => res.json())
+      .then((data) => {
+        setQuestions(data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        setError(err.message);
+        setLoading(false);
+      });
   };
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "#f5f0e8" }}>
-        <p style={{ color: "#6a5a40" }}>Loading questions...</p>
+        <p style={{ color: "#6a5a40" }}>Loading your personalized quiz...</p>
       </div>
     );
   }
@@ -85,24 +111,24 @@ export default function MemoryQuiz() {
       <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "#f5f0e8" }}>
         <div className="text-center">
           <h2 className="text-3xl font-bold mb-4" style={{ color: "#1a2744", fontFamily: "Georgia, serif" }}>
-            Practice Complete!
+            Daily Exercise Complete!
           </h2>
           <p className="text-xl mb-2" style={{ color: "#1a2744" }}>
             You scored <strong>{score}</strong> out of <strong>{questions.length}</strong>
           </p>
           <p className="mb-6" style={{ color: "#6a5a40" }}>
             {score === questions.length
-              ? "Perfect score! Amazing memory!"
+              ? "Perfect! Your memory is sharp today!"
               : score >= questions.length / 2
-              ? "Great job! Keep exercising your memory."
-              : "Keep trying! Practice makes perfect."}
+              ? "Good work! The questions you missed will come back to help you practice."
+              : "Don't worry — we'll focus on the tricky ones next time."}
           </p>
           <div className="flex gap-4 justify-center">
             <button
               onClick={handleRestart}
               className="px-8 py-3 bg-[#1a2744] text-white rounded-xl font-semibold hover:bg-[#243660] transition-colors"
             >
-              Play Again
+              Try Again
             </button>
             <button
               onClick={() => navigate("/games")}
@@ -123,7 +149,7 @@ export default function MemoryQuiz() {
       <div className="max-w-2xl mx-auto">
         <div className="flex justify-between items-center mb-2">
           <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "#AB0520" }}>
-            Practice Mode
+            Daily Exercise
           </p>
           <p className="text-sm font-semibold" style={{ color: "#AB0520" }}>
             Score: {score}

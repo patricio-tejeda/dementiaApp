@@ -12,6 +12,12 @@ class PatientProfile(models.Model):
         name_field = self.fields.filter(title__iexact="Patient Name").first()
         return name_field.answer if name_field else f"Profile #{self.id}"
 
+    def data_point_count(self):
+        """Count total data points (filled profile fields + diary entries)."""
+        filled_fields = self.fields.exclude(answer__exact='').exclude(answer__isnull=True).count()
+        diary_count = self.diary_entries.count()
+        return filled_fields + diary_count
+
 
 class InputInfoPage(models.Model):
     profile = models.ForeignKey(
@@ -65,7 +71,7 @@ class GeneratedQuestion(models.Model):
         related_name="generated_questions"
     )
     question_text = models.TextField()
-    options = models.JSONField()  # ["Option A", "Option B", "Option C", "Option D"]
+    options = models.JSONField()
     correct_answer = models.CharField(max_length=255)
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default="personal")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -75,6 +81,38 @@ class GeneratedQuestion(models.Model):
 
     def __str__(self):
         return f"{self.question_text[:60]}"
+
+    def times_asked(self):
+        return self.attempts.count()
+
+    def times_correct(self):
+        return self.attempts.filter(is_correct=True).count()
+
+    def times_wrong(self):
+        return self.attempts.filter(is_correct=False).count()
+
+    def accuracy(self):
+        total = self.times_asked()
+        if total == 0:
+            return None
+        return self.times_correct() / total
+
+
+class QuestionAttempt(models.Model):
+    question = models.ForeignKey(
+        GeneratedQuestion,
+        on_delete=models.CASCADE,
+        related_name="attempts"
+    )
+    selected_answer = models.CharField(max_length=255)
+    is_correct = models.BooleanField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{'✓' if self.is_correct else '✗'} {self.question.question_text[:40]}"
 
 
 class AIquestions(models.Model):
