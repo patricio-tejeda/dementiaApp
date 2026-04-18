@@ -38,6 +38,19 @@ const games = [
     ),
     available: true,
   },
+  {
+    id: "memory-quiz",
+    title: "Memory Quiz",
+    desc: "Test your memory with personalized multiple choice questions based on your life story and daily experiences.",
+    route: "/games/memory-quiz",
+    icon: (
+      <svg viewBox="0 0 48 48" style={{ width: 48, height: 48 }} fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="24" cy="24" r="22" stroke="#AB0520" strokeWidth="2.5" fill="#f5f0e8" />
+        <text x="24" y="32" textAnchor="middle" fill="#1a2744" fontSize="24" fontFamily="Georgia, serif" fontWeight="bold">?</text>
+      </svg>
+    ),
+    available: true,
+  },
 ];
 
 export default function GamesLanding() {

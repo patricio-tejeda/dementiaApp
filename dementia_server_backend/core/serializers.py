@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import PatientProfile, InputInfoPage, DiaryEntry, AppUser
+from .models import PatientProfile, InputInfoPage, DiaryEntry, GeneratedQuestion, AppUser
 from django.contrib.auth.hashers import make_password
 from django.core.exceptions import ValidationError
 from django.contrib.auth.password_validation import validate_password
@@ -41,6 +41,13 @@ class DiaryEntrySerializer(serializers.ModelSerializer):
         model = DiaryEntry
         fields = ('id', 'profile', 'text', 'date', 'created_at')
         read_only_fields = ('date', 'created_at')
+
+
+class GeneratedQuestionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GeneratedQuestion
+        fields = ('id', 'profile', 'question_text', 'options', 'correct_answer', 'category', 'created_at')
+        read_only_fields = ('created_at',)
 
 
 class AppUserSerializer(serializers.ModelSerializer):

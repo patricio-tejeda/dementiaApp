@@ -7,6 +7,7 @@ router = DefaultRouter()
 router.register(r'profiles', views.PatientProfileView, basename='profile')
 router.register(r'fields', views.InputInfoPageView, basename='fields')
 router.register(r'diary', views.DiaryEntryView, basename='diary')
+router.register(r'questions', views.GeneratedQuestionView, basename='questions')
 
 urlpatterns = [
     path('api/', include(router.urls)),

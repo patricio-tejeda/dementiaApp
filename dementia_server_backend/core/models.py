@@ -51,6 +51,32 @@ class DiaryEntry(models.Model):
         return f"{self.date}: {self.text[:60]}"
 
 
+class GeneratedQuestion(models.Model):
+    CATEGORY_CHOICES = [
+        ("personal", "Personal Info"),
+        ("family", "Family"),
+        ("education", "Education"),
+        ("diary", "Diary / Recent Events"),
+    ]
+
+    profile = models.ForeignKey(
+        PatientProfile,
+        on_delete=models.CASCADE,
+        related_name="generated_questions"
+    )
+    question_text = models.TextField()
+    options = models.JSONField()  # ["Option A", "Option B", "Option C", "Option D"]
+    correct_answer = models.CharField(max_length=255)
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default="personal")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.question_text[:60]}"
+
+
 class AIquestions(models.Model):
     profile = models.OneToOneField(
         PatientProfile,
