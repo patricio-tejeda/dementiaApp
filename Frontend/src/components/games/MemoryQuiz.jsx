@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-
-const API_BASE = "http://localhost:8000";
+import { useAuth } from "../../context/AuthContext";
+import { apiFetch } from "../../api";
 
 export default function MemoryQuiz() {
+  const { profile } = useAuth();
   const [questions, setQuestions] = useState([]);
   const [current, setCurrent] = useState(0);
   const [selected, setSelected] = useState(null);
@@ -12,20 +13,22 @@ export default function MemoryQuiz() {
   const [finished, setFinished] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const navigate = useNavigate();
 
-  const profileId = 1;
+  const [freeRecallText, setFreeRecallText] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const navigate = useNavigate();
 
   useEffect(() => {
     async function fetchQuestions() {
+      if (!profile) return;
       try {
-        const res = await fetch(`${API_BASE}/api/questions/?profile=${profileId}`);
+        const res = await apiFetch(`/api/questions/?profile=${profile.id}`);
         if (!res.ok) throw new Error("Failed to load questions.");
         const data = await res.json();
         if (data.length === 0) {
           setError("No questions available yet. Please generate questions first.");
         }
-        // Shuffle for variety
         setQuestions(data.sort(() => Math.random() - 0.5));
       } catch (err) {
         setError(err.message);
@@ -34,14 +37,38 @@ export default function MemoryQuiz() {
       }
     }
     fetchQuestions();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id]);
+
+  const q = questions[current];
+  const isFreeRecall = q?.question_type === "free_recall";
 
   const handleSelect = (option) => {
     if (showResult) return;
     setSelected(option);
     setShowResult(true);
-    if (option === questions[current].correct_answer) {
+    if (option === q.correct_answer) {
       setScore((s) => s + 1);
+    }
+  };
+
+  const handleFreeRecallSubmit = async () => {
+    if (!freeRecallText.trim() || submitting) return;
+    setSubmitting(true);
+    try {
+      await apiFetch(`/api/attempts/`, {
+        method: "POST",
+        body: JSON.stringify({
+          question: q.id,
+          selected_answer: freeRecallText.trim(),
+        }),
+      });
+      setScore((s) => s + 1);
+      setShowResult(true);
+    } catch (err) {
+      console.error("Failed to save free-recall answer:", err);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -52,6 +79,7 @@ export default function MemoryQuiz() {
       setCurrent((c) => c + 1);
       setSelected(null);
       setShowResult(false);
+      setFreeRecallText("");
     }
   };
 
@@ -62,6 +90,7 @@ export default function MemoryQuiz() {
     setShowResult(false);
     setScore(0);
     setFinished(false);
+    setFreeRecallText("");
   };
 
   if (loading) {
@@ -116,8 +145,6 @@ export default function MemoryQuiz() {
     );
   }
 
-  const q = questions[current];
-
   return (
     <div className="min-h-screen py-10 px-4" style={{ backgroundColor: "#f5f0e8" }}>
       <div className="max-w-2xl mx-auto">
@@ -147,55 +174,103 @@ export default function MemoryQuiz() {
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-6">
+          {isFreeRecall && (
+            <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: "#6a5a40" }}>
+              From your diary
+            </p>
+          )}
+
           <h2 className="text-xl font-bold mb-6" style={{ color: "#1a2744", fontFamily: "Georgia, serif" }}>
             {q.question_text}
           </h2>
 
-          <div className="flex flex-col gap-3">
-            {q.options.map((option, i) => {
-              let bgColor = "white";
-              let borderColor = "#d4c9b0";
-              let textColor = "#1a2744";
-
-              if (showResult) {
-                if (option === q.correct_answer) {
-                  bgColor = "#d4edda";
-                  borderColor = "#28a745";
-                } else if (option === selected && option !== q.correct_answer) {
-                  bgColor = "#f8d7da";
-                  borderColor = "#dc3545";
-                }
-              }
-
-              return (
+          {isFreeRecall ? (
+            <div className="flex flex-col gap-3">
+              <textarea
+                value={freeRecallText}
+                onChange={(e) => setFreeRecallText(e.target.value)}
+                disabled={showResult}
+                placeholder="Type your answer here..."
+                rows={4}
+                className="w-full px-4 py-3 rounded-xl text-sm border-2"
+                style={{
+                  borderColor: "#d4c9b0",
+                  backgroundColor: showResult ? "#f5f0e8" : "white",
+                  color: "#1a2744",
+                  resize: "vertical",
+                  fontFamily: "inherit",
+                }}
+              />
+              {!showResult && (
                 <button
-                  key={i}
-                  onClick={() => handleSelect(option)}
-                  disabled={showResult}
-                  className="text-left px-5 py-4 rounded-xl text-sm font-medium transition-all border-2"
+                  onClick={handleFreeRecallSubmit}
+                  disabled={!freeRecallText.trim() || submitting}
+                  className="px-6 py-3 rounded-xl font-semibold transition-colors"
                   style={{
-                    backgroundColor: bgColor,
-                    borderColor: borderColor,
-                    color: textColor,
-                    cursor: showResult ? "default" : "pointer",
+                    backgroundColor: !freeRecallText.trim() || submitting ? "#6a5a40" : "#1a2744",
+                    color: "white",
+                    border: "none",
+                    cursor: !freeRecallText.trim() || submitting ? "not-allowed" : "pointer",
+                    alignSelf: "flex-start",
                   }}
                 >
-                  {option}
+                  {submitting ? "Saving..." : "Submit Answer"}
                 </button>
-              );
-            })}
-          </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {q.options.map((option, i) => {
+                let bgColor = "white";
+                let borderColor = "#d4c9b0";
+                let textColor = "#1a2744";
+
+                if (showResult) {
+                  if (option === q.correct_answer) {
+                    bgColor = "#d4edda";
+                    borderColor = "#28a745";
+                  } else if (option === selected && option !== q.correct_answer) {
+                    bgColor = "#f8d7da";
+                    borderColor = "#dc3545";
+                  }
+                }
+
+                return (
+                  <button
+                    key={i}
+                    onClick={() => handleSelect(option)}
+                    disabled={showResult}
+                    className="text-left px-5 py-4 rounded-xl text-sm font-medium transition-all border-2"
+                    style={{
+                      backgroundColor: bgColor,
+                      borderColor: borderColor,
+                      color: textColor,
+                      cursor: showResult ? "default" : "pointer",
+                    }}
+                  >
+                    {option}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {showResult && (
           <div className="text-center">
-            <p className="text-lg font-semibold mb-4" style={{
-              color: selected === q.correct_answer ? "#28a745" : "#dc3545"
-            }}>
-              {selected === q.correct_answer
-                ? "Correct! Well done!"
-                : `Not quite. The answer is: ${q.correct_answer}`}
-            </p>
+            {isFreeRecall ? (
+              <p className="text-lg font-semibold mb-4" style={{ color: "#28a745" }}>
+                Answer saved! This will help create future questions for you.
+              </p>
+            ) : (
+              <p className="text-lg font-semibold mb-4" style={{
+                color: selected === q.correct_answer ? "#28a745" : "#dc3545"
+              }}>
+                {selected === q.correct_answer
+                  ? "Correct! Well done!"
+                  : `Not quite. The answer is: ${q.correct_answer}`}
+              </p>
+            )}
             <button
               onClick={handleNext}
               className="px-8 py-3 bg-[#AB0520] text-white rounded-xl font-semibold hover:bg-[#8a0418] transition-colors"

@@ -13,6 +13,9 @@ router.register(r'attempts', views.QuestionAttemptView, basename='attempts')
 urlpatterns = [
     path('api/', include(router.urls)),
 
+    # Current user's profile (auto-created on first request)
+    path("api/me/profile/", views.MyProfileView.as_view(), name="my-profile"),
+
     # Auth
     path("api/auth/login/", TokenObtainPairView.as_view(), name="login"),
     path("api/auth/refresh/", TokenRefreshView.as_view(), name="token-refresh"),

@@ -1,41 +1,38 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
+import { apiFetch } from "../../api";
 
-const API_BASE = "http://localhost:8000"
+export default function PatientProfileSetup() {
+  const { profile, refreshProfile } = useAuth();
+  const navigate = useNavigate();
 
-const DEFUALT_QUESTIONS = [
-    {title: "Patient Name", required: true, is_custom: false, order: 1},
-    {title: "Patient's Date of Birth", required: true, is_custom: false, order:2},
-    {title: "Patient's hometown", required: true, is_custom: false, order:3},
-    {title: "Patient's favorite color", required: false, is_custom: false, order:4},
-    {title: "Patients' mother's name", required: true, is_custom: false, order:5},
-    {title: "Patients' father's name", required: true, is_custom: false, order:6},
-    {title: "Patients' mother's birthday", required: false, is_custom: false, order:7},
-    {title: "Patients' father's birthday", required: false, is_custom: false, order:8},
-    {title: "Number of siblings that the patient has", required: true, is_custom: false, order:9}, // maybe make this one a dropdown option
-    {title: "Siblings names", required: false, is_custom: false, order:10}, // make this required if the answer to the previous question was > 0
-    {title: "What are the siblings' birthdays?", required: false, is_custom: false, order:11}, // make this requied also if #9 is >0 and make a dropdown so that the names of the siblings have input fields next to them where the bday can be entered
-    {title: "Patient's elementary school", required: true, is_custom: false, order:12},
-    {title: "Patient's middle school", required: true, is_custom: false, order:13},
-    {title: "Patient's high school", required: true, is_custom: false, order:14},
-    {title: "Patient's college", required: false, is_custom: false, order:15},
-    {title: "Patient's degree title", required: false, is_custom: false, order:16},
-];
+  const [fields, setFields] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [saved, setSaved] = useState(false);
 
-export default function PatientProfileSetup(){
-    const [fields, setFields] = useState(
-        DEFUALT_QUESTIONS.map((q) => ({...q, answer: " " }))
+  // Load fields from the user's existing (backend-seeded) profile
+  useEffect(() => {
+    if (!profile) {
+      setLoading(false);
+      return;
+    }
+    // profile.fields is already on the object from the serializer
+    const sorted = [...(profile.fields || [])].sort(
+      (a, b) => (a.order ?? 0) - (b.order ?? 0)
     );
-    const [saving, setSaving] = useState(false);
-    const [errors, setErrors] = useState({});
-    const [saved, setSaved] = useState(false);
+    setFields(sorted);
+    setLoading(false);
+  }, [profile]);
 
-    // updating answers
-    const handleAnswerChange = (index, value) => {
-        setFields((prev) => prev.map((f,i) => (i === index ? {...f, answer: value}: f))); 
-        setErrors((prev) =>({ ...prev, [index]: null }));
-    };
+  const handleAnswerChange = (index, value) => {
+    setFields((prev) => prev.map((f, i) => (i === index ? { ...f, answer: value } : f)));
+    setErrors((prev) => ({ ...prev, [index]: null }));
+  };
 
-    const handleTitleChange = (index, value) => {
+  const handleTitleChange = (index, value) => {
     setFields((prev) => prev.map((f, i) => (i === index ? { ...f, title: value } : f)));
     setErrors((prev) => ({ ...prev, [index]: null }));
   };
@@ -43,7 +40,13 @@ export default function PatientProfileSetup(){
   const addCustomField = () => {
     setFields((prev) => [
       ...prev,
-      { title: "", answer: "", required: false, is_custom: true, order: prev.length + 1 },
+      {
+        title: "",
+        answer: "",
+        required: false,
+        is_custom: true,
+        order: prev.length + 1,
+      },
     ]);
   };
 
@@ -52,13 +55,12 @@ export default function PatientProfileSetup(){
   };
 
   const handleSubmit = async () => {
-    // Validate
     const newErrors = {};
     fields.forEach((f, i) => {
-      if (f.required && !f.answer.trim()) {
+      if (f.required && !(f.answer || "").trim()) {
         newErrors[i] = "This field is required.";
       }
-      if (f.is_custom && !f.title.trim()) {
+      if (f.is_custom && !(f.title || "").trim()) {
         newErrors[i] = "Please add a label for your custom question.";
       }
     });
@@ -69,13 +71,19 @@ export default function PatientProfileSetup(){
 
     setSaving(true);
     try {
-      const res = await fetch(`${API_BASE}/api/profiles/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      // PATCH the existing profile with updated fields
+      const res = await apiFetch(`/api/profiles/${profile.id}/`, {
+        method: "PATCH",
         body: JSON.stringify({ fields }),
       });
-      if (!res.ok) throw new Error("Failed to save profile.");
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Failed to save profile.");
+      }
+      await refreshProfile();
       setSaved(true);
+      // Redirect to home after short delay so the "saved" screen is visible
+      setTimeout(() => navigate("/"), 1200);
     } catch (err) {
       alert(err.message);
     } finally {
@@ -83,12 +91,20 @@ export default function PatientProfileSetup(){
     }
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <p className="text-gray-500">Loading profile...</p>
+      </div>
+    );
+  }
+
   if (saved) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <h2 className="text-2xl font-bold text-[#1a2744] mb-2">Profile Saved!</h2>
-          <p className="text-gray-500">The patient's profile has been created successfully.</p>
+          <p className="text-gray-500">Redirecting to your dashboard...</p>
         </div>
       </div>
     );
@@ -97,8 +113,6 @@ export default function PatientProfileSetup(){
   return (
     <div className="min-h-screen bg-gray-50 py-10 px-4">
       <div className="max-w-2xl mx-auto">
-
-        {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-[#1a2744]">Patient Profile Setup</h1>
           <p className="text-gray-500 mt-1">
@@ -106,14 +120,12 @@ export default function PatientProfileSetup(){
           </p>
         </div>
 
-        {/* Fields */}
         <div className="flex flex-col gap-4">
           {fields.map((field, index) => (
             <div
-              key={index}
+              key={field.id ?? `new-${index}`}
               className="bg-white rounded-xl border border-gray-200 shadow-sm p-5"
             >
-              {/* Label row */}
               <div className="flex justify-between items-center mb-2">
                 {field.is_custom ? (
                   <input
@@ -140,11 +152,10 @@ export default function PatientProfileSetup(){
                 )}
               </div>
 
-              {/* Answer */}
               <textarea
                 rows={2}
                 placeholder={field.required ? "Required" : "Optional"}
-                value={field.answer}
+                value={field.answer || ""}
                 onChange={(e) => handleAnswerChange(index, e.target.value)}
                 className={`w-full text-sm text-gray-700 border rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-[#1a2744] transition
                   ${errors[index] ? "border-red-400" : "border-gray-200"}`}
@@ -157,7 +168,6 @@ export default function PatientProfileSetup(){
           ))}
         </div>
 
-        {/* Add custom field button */}
         <button
           onClick={addCustomField}
           className="mt-4 w-full py-3 border-2 border-dashed border-gray-300 rounded-xl text-gray-400 hover:border-[#1a2744] hover:text-[#1a2744] transition-colors text-sm"
@@ -165,7 +175,6 @@ export default function PatientProfileSetup(){
           + Add your own question
         </button>
 
-        {/* Save button */}
         <button
           onClick={handleSubmit}
           disabled={saving}
@@ -173,7 +182,6 @@ export default function PatientProfileSetup(){
         >
           {saving ? "Saving..." : "Save Profile"}
         </button>
-
       </div>
     </div>
   );

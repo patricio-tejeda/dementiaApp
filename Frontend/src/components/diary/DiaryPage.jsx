@@ -1,19 +1,18 @@
 import { useState, useEffect } from "react";
-
-const API_BASE = "http://localhost:8000";
+import { useAuth } from "../../context/AuthContext";
+import { apiFetch } from "../../api";
 
 export default function DiaryPage() {
+  const { profile } = useAuth();
   const [entries, setEntries] = useState([]);
   const [text, setText] = useState("");
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // For now, hardcode profile ID 1. Later this comes from auth/context.
-  const profileId = 1;
-
   const fetchEntries = async () => {
+    if (!profile) return;
     try {
-      const res = await fetch(`${API_BASE}/api/diary/?profile=${profileId}`);
+      const res = await apiFetch(`/api/diary/?profile=${profile.id}`);
       if (res.ok) {
         const data = await res.json();
         setEntries(data);
@@ -27,16 +26,16 @@ export default function DiaryPage() {
 
   useEffect(() => {
     fetchEntries();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id]);
 
   const handleSubmit = async () => {
-    if (!text.trim()) return;
+    if (!text.trim() || !profile) return;
     setSaving(true);
     try {
-      const res = await fetch(`${API_BASE}/api/diary/`, {
+      const res = await apiFetch(`/api/diary/`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profile: profileId, text: text.trim() }),
+        body: JSON.stringify({ profile: profile.id, text: text.trim() }),
       });
       if (!res.ok) throw new Error("Failed to save entry.");
       setText("");
@@ -51,8 +50,6 @@ export default function DiaryPage() {
   return (
     <div className="min-h-screen py-10 px-4" style={{ backgroundColor: "#f5f0e8" }}>
       <div className="max-w-2xl mx-auto">
-
-        {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold" style={{ color: "#1a2744", fontFamily: "Georgia, serif" }}>
             Daily Diary
@@ -62,7 +59,6 @@ export default function DiaryPage() {
           </p>
         </div>
 
-        {/* New Entry */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 mb-6">
           <textarea
             rows={4}
@@ -80,7 +76,6 @@ export default function DiaryPage() {
           </button>
         </div>
 
-        {/* Past Entries */}
         <div>
           <h2 className="text-lg font-bold mb-4" style={{ color: "#1a2744", fontFamily: "Georgia, serif" }}>
             Past Entries
@@ -106,7 +101,6 @@ export default function DiaryPage() {
             </div>
           ))}
         </div>
-
       </div>
     </div>
   );

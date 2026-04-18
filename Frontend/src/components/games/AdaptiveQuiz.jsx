@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-
-const API_BASE = "http://localhost:8000";
+import { useAuth } from "../../context/AuthContext";
+import { apiFetch } from "../../api";
 
 export default function AdaptiveQuiz() {
+  const { profile } = useAuth();
   const [questions, setQuestions] = useState([]);
   const [current, setCurrent] = useState(0);
   const [selected, setSelected] = useState(null);
@@ -12,51 +13,81 @@ export default function AdaptiveQuiz() {
   const [finished, setFinished] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const navigate = useNavigate();
 
-  const profileId = 1;
+  const [freeRecallText, setFreeRecallText] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const navigate = useNavigate();
   const questionCount = 5;
 
-  useEffect(() => {
-    async function fetchQuestions() {
-      try {
-        const res = await fetch(`${API_BASE}/api/questions/adaptive/?profile=${profileId}&count=${questionCount}`);
-        if (!res.ok) throw new Error("Failed to load questions.");
+  const fetchAdaptive = async () => {
+    if (!profile) return;
+    try {
+      const res = await apiFetch(`/api/questions/adaptive/?count=${questionCount}`);
+      if (!res.ok) {
         const data = await res.json();
-        if (data.length === 0 || data.error) {
-          setError(data.error || "No questions available yet. Please generate questions first.");
-        } else {
-          setQuestions(data);
-        }
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
+        setError(data.error || "No questions available yet. Please generate questions first.");
+        return;
       }
+      const data = await res.json();
+      if (data.length === 0) {
+        setError("No questions available yet. Please generate questions first.");
+      } else {
+        setQuestions(data);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
-    fetchQuestions();
-  }, []);
+  };
+
+  useEffect(() => {
+    fetchAdaptive();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id]);
+
+  const q = questions[current];
+  const isFreeRecall = q?.question_type === "free_recall";
 
   const handleSelect = async (option) => {
     if (showResult) return;
     setSelected(option);
     setShowResult(true);
 
-    const isCorrect = option === questions[current].correct_answer;
+    const isCorrect = option === q.correct_answer;
     if (isCorrect) setScore((s) => s + 1);
 
-    // Record attempt
     try {
-      await fetch(`${API_BASE}/api/attempts/`, {
+      await apiFetch(`/api/attempts/`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          question: questions[current].id,
+          question: q.id,
           selected_answer: option,
         }),
       });
     } catch (err) {
       console.error("Failed to record attempt:", err);
+    }
+  };
+
+  const handleFreeRecallSubmit = async () => {
+    if (!freeRecallText.trim() || submitting) return;
+    setSubmitting(true);
+    try {
+      await apiFetch(`/api/attempts/`, {
+        method: "POST",
+        body: JSON.stringify({
+          question: q.id,
+          selected_answer: freeRecallText.trim(),
+        }),
+      });
+      setScore((s) => s + 1);
+      setShowResult(true);
+    } catch (err) {
+      console.error("Failed to save free-recall answer:", err);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -67,6 +98,7 @@ export default function AdaptiveQuiz() {
       setCurrent((c) => c + 1);
       setSelected(null);
       setShowResult(false);
+      setFreeRecallText("");
     }
   };
 
@@ -77,17 +109,8 @@ export default function AdaptiveQuiz() {
     setSelected(null);
     setShowResult(false);
     setScore(0);
-    // Re-fetch — adaptive endpoint will re-rank based on new attempts
-    fetch(`${API_BASE}/api/questions/adaptive/?profile=${profileId}&count=${questionCount}`)
-      .then((res) => res.json())
-      .then((data) => {
-        setQuestions(data);
-        setLoading(false);
-      })
-      .catch((err) => {
-        setError(err.message);
-        setLoading(false);
-      });
+    setFreeRecallText("");
+    fetchAdaptive();
   };
 
   if (loading) {
@@ -142,8 +165,6 @@ export default function AdaptiveQuiz() {
     );
   }
 
-  const q = questions[current];
-
   return (
     <div className="min-h-screen py-10 px-4" style={{ backgroundColor: "#f5f0e8" }}>
       <div className="max-w-2xl mx-auto">
@@ -173,55 +194,103 @@ export default function AdaptiveQuiz() {
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-6">
+          {isFreeRecall && (
+            <p className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: "#6a5a40" }}>
+              From your diary
+            </p>
+          )}
+
           <h2 className="text-xl font-bold mb-6" style={{ color: "#1a2744", fontFamily: "Georgia, serif" }}>
             {q.question_text}
           </h2>
 
-          <div className="flex flex-col gap-3">
-            {q.options.map((option, i) => {
-              let bgColor = "white";
-              let borderColor = "#d4c9b0";
-              let textColor = "#1a2744";
-
-              if (showResult) {
-                if (option === q.correct_answer) {
-                  bgColor = "#d4edda";
-                  borderColor = "#28a745";
-                } else if (option === selected && option !== q.correct_answer) {
-                  bgColor = "#f8d7da";
-                  borderColor = "#dc3545";
-                }
-              }
-
-              return (
+          {isFreeRecall ? (
+            <div className="flex flex-col gap-3">
+              <textarea
+                value={freeRecallText}
+                onChange={(e) => setFreeRecallText(e.target.value)}
+                disabled={showResult}
+                placeholder="Type your answer here..."
+                rows={4}
+                className="w-full px-4 py-3 rounded-xl text-sm border-2"
+                style={{
+                  borderColor: "#d4c9b0",
+                  backgroundColor: showResult ? "#f5f0e8" : "white",
+                  color: "#1a2744",
+                  resize: "vertical",
+                  fontFamily: "inherit",
+                }}
+              />
+              {!showResult && (
                 <button
-                  key={i}
-                  onClick={() => handleSelect(option)}
-                  disabled={showResult}
-                  className="text-left px-5 py-4 rounded-xl text-sm font-medium transition-all border-2"
+                  onClick={handleFreeRecallSubmit}
+                  disabled={!freeRecallText.trim() || submitting}
+                  className="px-6 py-3 rounded-xl font-semibold transition-colors"
                   style={{
-                    backgroundColor: bgColor,
-                    borderColor: borderColor,
-                    color: textColor,
-                    cursor: showResult ? "default" : "pointer",
+                    backgroundColor: !freeRecallText.trim() || submitting ? "#6a5a40" : "#1a2744",
+                    color: "white",
+                    border: "none",
+                    cursor: !freeRecallText.trim() || submitting ? "not-allowed" : "pointer",
+                    alignSelf: "flex-start",
                   }}
                 >
-                  {option}
+                  {submitting ? "Saving..." : "Submit Answer"}
                 </button>
-              );
-            })}
-          </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {q.options.map((option, i) => {
+                let bgColor = "white";
+                let borderColor = "#d4c9b0";
+                let textColor = "#1a2744";
+
+                if (showResult) {
+                  if (option === q.correct_answer) {
+                    bgColor = "#d4edda";
+                    borderColor = "#28a745";
+                  } else if (option === selected && option !== q.correct_answer) {
+                    bgColor = "#f8d7da";
+                    borderColor = "#dc3545";
+                  }
+                }
+
+                return (
+                  <button
+                    key={i}
+                    onClick={() => handleSelect(option)}
+                    disabled={showResult}
+                    className="text-left px-5 py-4 rounded-xl text-sm font-medium transition-all border-2"
+                    style={{
+                      backgroundColor: bgColor,
+                      borderColor: borderColor,
+                      color: textColor,
+                      cursor: showResult ? "default" : "pointer",
+                    }}
+                  >
+                    {option}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {showResult && (
           <div className="text-center">
-            <p className="text-lg font-semibold mb-4" style={{
-              color: selected === q.correct_answer ? "#28a745" : "#dc3545"
-            }}>
-              {selected === q.correct_answer
-                ? "Correct! Well done!"
-                : `Not quite. The answer is: ${q.correct_answer}`}
-            </p>
+            {isFreeRecall ? (
+              <p className="text-lg font-semibold mb-4" style={{ color: "#28a745" }}>
+                Answer saved! This will help create future questions for you.
+              </p>
+            ) : (
+              <p className="text-lg font-semibold mb-4" style={{
+                color: selected === q.correct_answer ? "#28a745" : "#dc3545"
+              }}>
+                {selected === q.correct_answer
+                  ? "Correct! Well done!"
+                  : `Not quite. The answer is: ${q.correct_answer}`}
+              </p>
+            )}
             <button
               onClick={handleNext}
               className="px-8 py-3 bg-[#AB0520] text-white rounded-xl font-semibold hover:bg-[#8a0418] transition-colors"

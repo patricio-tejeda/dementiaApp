@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-
-const API_BASE = "http://localhost:8000";
+import { apiFetch } from "../../api";
 
 const games = [
   {
@@ -75,16 +74,13 @@ export default function GamesLanding() {
   const [generating, setGenerating] = useState(false);
   const [genMessage, setGenMessage] = useState("");
 
-  const profileId = 1;
-
   const handleGenerate = async () => {
     setGenerating(true);
     setGenMessage("");
     try {
-      const res = await fetch(`${API_BASE}/api/questions/generate/`, {
+      const res = await apiFetch(`/api/questions/generate/`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profile_id: profileId }),
+        body: JSON.stringify({}),
       });
       const data = await res.json();
       setGenMessage(data.message || "Done!");
@@ -175,7 +171,6 @@ export default function GamesLanding() {
         ))}
       </div>
 
-      {/* Generate Questions */}
       <div style={{
         marginTop: 32,
         padding: 20,

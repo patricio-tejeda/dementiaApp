@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useCallback } from "react";
+import { createContext, useContext, useState, useCallback, useEffect } from "react";
+import { API_BASE } from "../api";
 
 const AuthContext = createContext(null);
 
@@ -13,8 +14,38 @@ export function AuthProvider({ children }) {
     refresh: localStorage.getItem("refresh_token"),
   }));
 
+  const [profile, setProfile] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+
+  const refreshProfile = useCallback(async () => {
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      setProfile(null);
+      return null;
+    }
+    setProfileLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/me/profile/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        setProfile(null);
+        return null;
+      }
+      const data = await res.json();
+      setProfile(data);
+      return data;
+    } catch (err) {
+      console.error("Failed to fetch profile:", err);
+      setProfile(null);
+      return null;
+    } finally {
+      setProfileLoading(false);
+    }
+  }, []);
+
   const login = useCallback(async (username, password) => {
-    const res = await fetch("http://localhost:8000/api/auth/login/", {
+    const res = await fetch(`${API_BASE}/api/auth/login/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password }),
@@ -31,7 +62,7 @@ export function AuthProvider({ children }) {
     setTokens({ access: data.access, refresh: data.refresh });
 
     // Fetch user info
-    const meRes = await fetch("http://localhost:8000/me/", {
+    const meRes = await fetch(`${API_BASE}/me/`, {
       headers: { Authorization: `Bearer ${data.access}` },
     });
     if (meRes.ok) {
@@ -39,7 +70,10 @@ export function AuthProvider({ children }) {
       localStorage.setItem("user", JSON.stringify(me));
       setUser(me);
     }
-  }, []);
+
+    // Fetch profile (auto-creates on backend if missing)
+    await refreshProfile();
+  }, [refreshProfile]);
 
   const logout = useCallback(() => {
     localStorage.removeItem("access_token");
@@ -47,10 +81,30 @@ export function AuthProvider({ children }) {
     localStorage.removeItem("user");
     setTokens({ access: null, refresh: null });
     setUser(null);
+    setProfile(null);
+  }, []);
+
+  // On app mount, if a token exists, fetch the profile once
+  useEffect(() => {
+    if (tokens.access && !profile) {
+      refreshProfile();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, tokens, login, logout, isLoggedIn: !!tokens.access }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        tokens,
+        profile,
+        profileLoading,
+        login,
+        logout,
+        refreshProfile,
+        isLoggedIn: !!tokens.access,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

@@ -4,7 +4,32 @@ from django.core.validators import RegexValidator
 from django.db import models
 
 
+class AppUser(AbstractUser):
+    unique_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    full_name = models.CharField(max_length=255)
+    address = models.TextField()
+    phone_regex = RegexValidator(
+        regex=r'^\+?1?\d{9,15}$',
+        message="Phone number must be entered in the format: '+999999999'. Up to 15 digits allowed."
+    )
+    phone_number = models.CharField(validators=[phone_regex], max_length=17)
+
+    birthplace = models.CharField(max_length=255)
+    elementary_school = models.CharField(max_length=255)
+    favorite_ice_cream = models.CharField(max_length=255)
+
+    def __str__(self):
+        return self.username
+
+
 class PatientProfile(models.Model):
+    # One profile per user. SET_NULL on user delete would orphan data;
+    # CASCADE ensures deleting a user also deletes their patient data.
+    user = models.OneToOneField(
+        AppUser,
+        on_delete=models.CASCADE,
+        related_name="patient_profile",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -17,6 +42,14 @@ class PatientProfile(models.Model):
         filled_fields = self.fields.exclude(answer__exact='').exclude(answer__isnull=True).count()
         diary_count = self.diary_entries.count()
         return filled_fields + diary_count
+
+    def is_complete(self):
+        """True when every required profile field has a non-empty answer."""
+        required_fields = self.fields.filter(required=True)
+        if not required_fields.exists():
+            # No fields seeded yet → not complete
+            return False
+        return not required_fields.filter(answer__in=['', None]).exists()
 
 
 class InputInfoPage(models.Model):
@@ -41,6 +74,12 @@ class InputInfoPage(models.Model):
 
 
 class DiaryEntry(models.Model):
+    QUALITY_CHOICES = [
+        ("low", "Low quality / discard"),
+        ("sparse", "Sparse - needs follow-up"),
+        ("rich", "Rich - usable for MCQ"),
+    ]
+
     profile = models.ForeignKey(
         PatientProfile,
         on_delete=models.CASCADE,
@@ -49,6 +88,15 @@ class DiaryEntry(models.Model):
     text = models.TextField()
     date = models.DateField(auto_now_add=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    quality = models.CharField(
+        max_length=10,
+        choices=QUALITY_CHOICES,
+        null=True,
+        blank=True,
+    )
+    followup_prompt = models.TextField(null=True, blank=True)
+    enrichment = models.TextField(null=True, blank=True)
 
     class Meta:
         ordering = ["-date", "-created_at"]
@@ -65,15 +113,32 @@ class GeneratedQuestion(models.Model):
         ("diary", "Diary / Recent Events"),
     ]
 
+    QUESTION_TYPE_CHOICES = [
+        ("mcq", "Multiple Choice"),
+        ("free_recall", "Free Recall"),
+    ]
+
     profile = models.ForeignKey(
         PatientProfile,
         on_delete=models.CASCADE,
         related_name="generated_questions"
     )
     question_text = models.TextField()
-    options = models.JSONField()
-    correct_answer = models.CharField(max_length=255)
+    options = models.JSONField(null=True, blank=True)
+    correct_answer = models.CharField(max_length=255, blank=True)
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default="personal")
+    question_type = models.CharField(
+        max_length=15,
+        choices=QUESTION_TYPE_CHOICES,
+        default="mcq",
+    )
+    source_diary_entry = models.ForeignKey(
+        DiaryEntry,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="generated_questions",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -112,7 +177,7 @@ class QuestionAttempt(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{'✓' if self.is_correct else '✗'} {self.question.question_text[:40]}"
+        return f"{'OK' if self.is_correct else 'X'} {self.question.question_text[:40]}"
 
 
 class AIquestions(models.Model):
@@ -121,21 +186,3 @@ class AIquestions(models.Model):
         on_delete=models.CASCADE,
         related_name="ai_interview"
     )
-
-
-class AppUser(AbstractUser):
-    unique_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
-    full_name = models.CharField(max_length=255)
-    address = models.TextField()
-    phone_regex = RegexValidator(
-        regex=r'^\+?1?\d{9,15}$',
-        message="Phone number must be entered in the format: '+999999999'. Up to 15 digits allowed."
-    )
-    phone_number = models.CharField(validators=[phone_regex], max_length=17)
-
-    birthplace = models.CharField(max_length=255)
-    elementary_school = models.CharField(max_length=255)
-    favorite_ice_cream = models.CharField(max_length=255)
-
-    def __str__(self):
-        return self.username

@@ -1,10 +1,8 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
 import './App.css'
-import { Routes, Route } from "react-router-dom";
-import { AuthProvider } from "./context/AuthContext";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { AuthProvider, useAuth } from "./context/AuthContext";
 import Layout from "./components/layout/Layout";
+import LoginScreen from "./components/auth/LoginScreen";
 import Home from "./components/home/home";
 import CreateAccount from "./components/account/CreateAccount";
 import UpdateAccount from "./components/account/UpdateAccount";
@@ -16,9 +14,36 @@ import AdaptiveQuiz from "./components/games/AdaptiveQuiz";
 import PatientProfileSetup from "./components/profile/PatientProfileSetup.jsx";
 import DiaryPage from "./components/diary/DiaryPage.jsx";
 
-function App() {
+function ProfileGate({ children }) {
+  // If the user's profile isn't complete, force them onto /profile-setup
+  // regardless of the URL they typed in.
+  const { profile, profileLoading } = useAuth();
+  const location = useLocation();
+
+  if (profileLoading || !profile) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#f5f0e8" }}>
+        <p style={{ color: "#6a5a40" }}>Loading your profile...</p>
+      </div>
+    );
+  }
+
+  if (!profile.is_complete && location.pathname !== "/profile-setup") {
+    return <Navigate to="/profile-setup" replace />;
+  }
+
+  return children;
+}
+
+function AppRoutes() {
+  const { isLoggedIn } = useAuth();
+
+  if (!isLoggedIn) {
+    return <LoginScreen />;
+  }
+
   return (
-    <AuthProvider>
+    <ProfileGate>
       <Layout>
         <Routes>
           <Route path="/" element={<Home />} />
@@ -26,9 +51,7 @@ function App() {
           <Route path="/update-account" element={<UpdateAccount />} />
           <Route path="/profile-setup" element={<PatientProfileSetup />} />
           <Route path="/diary" element={<DiaryPage />} />
-          {/* placeholders */}
           <Route path="/wellness" element={<div className="text-[#1a2744] p-4">Wellness — Coming Soon</div>} />
-          {/* Games */}
           <Route path="/games" element={<GamesLanding />} />
           <Route path="/games/memory-lane" element={<MemoryLane />} />
           <Route path="/games/memory-quiz" element={<MemoryQuiz />} />
@@ -37,6 +60,14 @@ function App() {
           <Route path="/about" element={<div className="text-[#1a2744] p-4">About Us — Coming Soon</div>} />
         </Routes>
       </Layout>
+    </ProfileGate>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppRoutes />
     </AuthProvider>
   );
 }
