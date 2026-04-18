@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 
-const API_BASE = "http://localhosst:8000"
+const API_BASE = "http://localhost:8000"
 
 const DEFUALT_QUESTIONS = [
     {title: "Patient Name", required: true, is_custom: false, order: 1},
@@ -27,7 +27,7 @@ export default function PatientProfileSetup(){
     );
     const [saving, setSaving] = useState(false);
     const [errors, setErrors] = useState({});
-    const [savec, setSaved] = useState(false);
+    const [saved, setSaved] = useState(false);
 
     // updating answers
     const handleAnswerChange = (index, value) => {

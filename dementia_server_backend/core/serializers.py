@@ -1,17 +1,22 @@
 from rest_framework import serializers
-from .models import PatientProfile, InputInfoPage
+from .models import PatientProfile, InputInfoPage, AppUser
+from django.contrib.auth.hashers import make_password
+from django.core.exceptions import ValidationError
+from django.contrib.auth.password_validation import validate_password
+
 
 class InputInfoSerializer(serializers.ModelSerializer):
     class Meta:
         model = InputInfoPage
         fields = ('id', 'title', 'answer', 'required', 'is_custom', 'order')
 
+
 class PatientProfileSerializer(serializers.ModelSerializer):
     fields = InputInfoSerializer(many=True)
+
     class Meta:
         model = PatientProfile
-        fields = ('id', 'caregiver', 'created_at', 'updated_at', 'fields')
-        read_only = ('caregiver')
+        fields = ('id', 'created_at', 'updated_at', 'fields')
 
     def create(self, validated_data):
         fields_data = validated_data.pop('fields')
@@ -22,7 +27,6 @@ class PatientProfileSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         fields_data = validated_data.pop('fields', [])
-        # Update or create each field by id
         for field_data in fields_data:
             field_id = field_data.get('id', None)
             if field_id:
@@ -30,10 +34,6 @@ class PatientProfileSerializer(serializers.ModelSerializer):
             else:
                 InputInfoPage.objects.create(profile=instance, **field_data)
         return instance
-from .models import AppUser
-from django.contrib.auth.hashers import make_password
-from django.core.exceptions import ValidationError
-from django.contrib.auth.password_validation import validate_password
 
 
 class AppUserSerializer(serializers.ModelSerializer):
@@ -48,19 +48,16 @@ class AppUserSerializer(serializers.ModelSerializer):
         ]
 
     def validate_password(self, value):
-        """
-        Run Django password validators 
-        """
         try:
-            validate_password(value) 
+            validate_password(value)
         except ValidationError as e:
             raise serializers.ValidationError(e.messages)
         return value
 
     def create(self, validated_data):
-        # Hash the password before saving
         validated_data["password"] = make_password(validated_data["password"])
         return super().create(validated_data)
+
 
 class AppUserUpdateSerializer(serializers.ModelSerializer):
     class Meta:

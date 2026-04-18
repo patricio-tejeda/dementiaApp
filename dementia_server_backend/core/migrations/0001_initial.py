@@ -26,6 +26,9 @@ class Migration(migrations.Migration):
                 ('title', models.CharField(max_length=120)),
                 ('answer', models.TextField()),
                 ('required', models.BooleanField(default=False)),
+            ],
+        ),
+        migrations.CreateModel(
             name='AppUser',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
