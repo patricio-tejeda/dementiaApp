@@ -3,27 +3,19 @@ from django.contrib.auth.models import AbstractUser
 from django.core.validators import RegexValidator
 from django.db import models
 
-# Create your models here.
+
 class PatientProfile(models.Model):
-    # caregiver = models.ForeignKey(
-    #     # AppUser, # will be an okay reference when branches are merged
-    #     on_delete=models.CASCADE,
-    #     related_name="patient_profiles"
-    # )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        '''find the patient name'''
         name_field = self.fields.filter(title__iexact="Patient Name").first()
         return name_field.answer if name_field else f"Profile #{self.id}"
-     
+
+
 class InputInfoPage(models.Model):
-    """ each title for questions/information that should be inputted into the app by a close relative to the patient 
-       (the list of actual questions will be defined in the json file) """
-	# titles = models.["Patient Name: ", ""]
     profile = models.ForeignKey(
-        PatientProfile, 
+        PatientProfile,
         on_delete=models.CASCADE,
         related_name="fields",
         null=True,
@@ -31,27 +23,44 @@ class InputInfoPage(models.Model):
 
     title = models.CharField(max_length=120)
     answer = models.TextField(blank=True)
-    required = models.BooleanField(default=False) # determines if a question is required in order to save the profile information
-    is_custom = models.BooleanField(default=False)  # True = caregiver-created field
-    order = models.PositiveIntegerField(default=0)   # Controls display order
+    required = models.BooleanField(default=False)
+    is_custom = models.BooleanField(default=False)
+    order = models.PositiveIntegerField(default=0)
 
     class Meta:
         ordering = ["order", "id"]
 
     def __str__(self):
         return f"{self.title}: {self.answer[:50]}"
-        
+
+
+class DiaryEntry(models.Model):
+    profile = models.ForeignKey(
+        PatientProfile,
+        on_delete=models.CASCADE,
+        related_name="diary_entries"
+    )
+    text = models.TextField()
+    date = models.DateField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date", "-created_at"]
+
+    def __str__(self):
+        return f"{self.date}: {self.text[:60]}"
+
+
 class AIquestions(models.Model):
     profile = models.OneToOneField(
-        PatientProfile, 
+        PatientProfile,
         on_delete=models.CASCADE,
-        related_name = "ai_interview"
+        related_name="ai_interview"
     )
 
+
 class AppUser(AbstractUser):
-    # Auto Generated Unique ID
     unique_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
-    # Remove username already exists from AbstractUser
     full_name = models.CharField(max_length=255)
     address = models.TextField()
     phone_regex = RegexValidator(
@@ -60,7 +69,6 @@ class AppUser(AbstractUser):
     )
     phone_number = models.CharField(validators=[phone_regex], max_length=17)
 
-    # Security Questions
     birthplace = models.CharField(max_length=255)
     elementary_school = models.CharField(max_length=255)
     favorite_ice_cream = models.CharField(max_length=255)

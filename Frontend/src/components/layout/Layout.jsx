@@ -5,7 +5,7 @@ import AuthModal from "../auth/AuthModal";
 
 const navPages = [
   { id: "home", title: "HOME", route: "/" },
-  { id: "reminders", title: "REMINDERS", route: "/reminders" },
+  { id: "diary", title: "DIARY", route: "/diary" },
   { id: "wellness", title: "WELLNESS", route: "/wellness" },
   { id: "games", title: "GAMES", route: "/games" },
   { id: "about", title: "ABOUT US", route: "/about" },

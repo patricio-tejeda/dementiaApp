@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import PatientProfile, InputInfoPage, AppUser
+from .models import PatientProfile, InputInfoPage, DiaryEntry, AppUser
 from django.contrib.auth.hashers import make_password
 from django.core.exceptions import ValidationError
 from django.contrib.auth.password_validation import validate_password
@@ -34,6 +34,13 @@ class PatientProfileSerializer(serializers.ModelSerializer):
             else:
                 InputInfoPage.objects.create(profile=instance, **field_data)
         return instance
+
+
+class DiaryEntrySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DiaryEntry
+        fields = ('id', 'profile', 'text', 'date', 'created_at')
+        read_only_fields = ('date', 'created_at')
 
 
 class AppUserSerializer(serializers.ModelSerializer):

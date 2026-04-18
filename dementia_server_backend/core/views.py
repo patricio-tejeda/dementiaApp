@@ -2,10 +2,11 @@ from rest_framework import viewsets, generics, permissions
 from .serializers import (
     PatientProfileSerializer,
     InputInfoSerializer,
+    DiaryEntrySerializer,
     AppUserSerializer,
     AppUserUpdateSerializer,
 )
-from .models import PatientProfile, InputInfoPage, AppUser
+from .models import PatientProfile, InputInfoPage, DiaryEntry, AppUser
 
 
 class PatientProfileView(viewsets.ModelViewSet):
@@ -23,6 +24,17 @@ class InputInfoPageView(viewsets.ModelViewSet):
         if profile_id:
             return InputInfoPage.objects.filter(profile_id=profile_id)
         return InputInfoPage.objects.all()
+
+
+class DiaryEntryView(viewsets.ModelViewSet):
+    serializer_class = DiaryEntrySerializer
+    permission_classes = [permissions.AllowAny]
+
+    def get_queryset(self):
+        profile_id = self.request.query_params.get('profile', None)
+        if profile_id:
+            return DiaryEntry.objects.filter(profile_id=profile_id)
+        return DiaryEntry.objects.all()
 
 
 class AppUserCreateAPIView(generics.CreateAPIView):
