@@ -45,6 +45,7 @@ export default function PatientProfileSetup() {
         answer: "",
         required: false,
         is_custom: true,
+        is_generated = false,
         order: prev.length + 1,
       },
     ]);
@@ -53,6 +54,22 @@ export default function PatientProfileSetup() {
   const removeCustomField = (index) => {
     setFields((prev) => prev.filter((_, i) => i !== index));
   };
+
+  // have the option for the AI to generate more questions for the dementia patient profile so that the 
+  // db has more information, but the caregiver doesn't have to come up with new questions on their own
+  const addAIFields = () => {
+    setFields((prev) => [
+      ...prev,
+      {
+        title: "",
+        answer: "",
+        required: false,
+        is_custom: false,
+        is_generated = true,
+        order: prev.length + 1,
+      },
+    ])
+  }
 
   const handleSubmit = async () => {
     const newErrors = {};
@@ -173,6 +190,13 @@ export default function PatientProfileSetup() {
           className="mt-4 w-full py-3 border-2 border-dashed border-gray-300 rounded-xl text-gray-400 hover:border-[#1a2744] hover:text-[#1a2744] transition-colors text-sm"
         >
           + Add your own question
+        </button>
+
+        <button
+          onClick={addAIFields}
+          className="mt-4 w-full py-3 border-2 border-dashed border-gray-300 rounded-xl text-gray-400 hover:border-[#1a2744] hover:text-[#1a2744] transition-colors text-sm"
+        >
+          + Generate more questions
         </button>
 
         <button

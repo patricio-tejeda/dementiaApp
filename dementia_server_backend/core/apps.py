@@ -26,7 +26,7 @@ if __name__ == '__main__':
     rag_search = RAGSearch()
     query = "What is the patients' mother's name?"
     summary = rag_search.search_and_summarize(query, top_k = 3)
-    print(f"summary: {summary}")
+    print(f"summary: {summary}") 
 
 class CoreConfig(AppConfig):
     name = 'core'

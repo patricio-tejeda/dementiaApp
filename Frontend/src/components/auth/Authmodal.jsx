@@ -52,8 +52,13 @@ export default function AuthModal({ onClose, dismissable = true }) {
       });
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(JSON.stringify(data));
+        console.log("FULL BACKEND ERROR:", data);
+        throw new Error(data.detail || JSON.stringify(data));
       }
+      // if (!res.ok) {
+      //   const data = await res.json();
+      //   throw new Error(JSON.stringify(data));
+      // }
       setSuccess("Account created! You can now sign in.");
       setMode("signin");
     } catch (err) {

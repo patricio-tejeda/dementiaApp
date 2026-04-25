@@ -64,6 +64,7 @@ class InputInfoPage(models.Model):
     answer = models.TextField(blank=True)
     required = models.BooleanField(default=False)
     is_custom = models.BooleanField(default=False)
+    is_generated = models.BooleanField(default=False)
     order = models.PositiveIntegerField(default=0)
 
     class Meta:
@@ -186,3 +187,8 @@ class AIquestions(models.Model):
         on_delete=models.CASCADE,
         related_name="ai_interview"
     )
+
+# maybe create a class/field that allows the user to input a text/voice sample that the LLM can mimic when
+# asking questions later, then we can use the similarity evaluation, or we can tell the ai
+# to act like a caregiver would in terms of asking questions then evaluate the similarties of the 
+# ai personality/used words to that of dementia caregivers

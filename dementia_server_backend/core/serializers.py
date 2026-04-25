@@ -11,7 +11,7 @@ class InputInfoSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = InputInfoPage
-        fields = ('id', 'title', 'answer', 'required', 'is_custom', 'order')
+        fields = ('id', 'title', 'answer', 'required', 'is_custom', 'is_generated', 'order')
 
 
 class PatientProfileSerializer(serializers.ModelSerializer):

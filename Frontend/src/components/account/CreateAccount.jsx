@@ -39,10 +39,20 @@ function CreateAccount() {
         body: JSON.stringify(formData),
       });
 
+      // more detailes error message for debugging
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(JSON.stringify(data));
+        console.log("Backend signup error:", data);
+        throw new Error(
+          data.detail ||
+          Object.values(data).flat().join(" ") ||
+          JSON.stringify(data)
+        );
       }
+      // if (!response.ok) {
+      //   const data = await response.json();
+      //   throw new Error(JSON.stringify(data));
+      // }
 
       setSuccess("Account created successfully!");
       setFormData({
