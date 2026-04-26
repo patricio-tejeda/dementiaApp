@@ -1,7 +1,9 @@
 {
   "ExpandedNodes": [
-    ""
+    "",
+    "\\dementia_server_backend",
+    "\\dementia_server_backend\\core"
   ],
-  "SelectedNode": "\\init.py",
+  "SelectedNode": "\\dementia_server_backend\\core\\models.py",
   "PreviewInSolutionExplorer": false
 }
