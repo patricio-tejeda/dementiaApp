@@ -97,7 +97,6 @@ export default function Layout({ children }) {
                 {[
                   { label: "Personal Info", route: "/personal-info" },
                   { label: "Family Info", route: "/family-info" },
-                  { label: "Pets Info", route: "/pets-info" },
                   { label: "Important Memories", route: "/memories" },
                 ].map((item) => (
                   <NavLink

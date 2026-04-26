@@ -12,7 +12,10 @@ import FamilyTree from "./components/games/FamilyTree";
 import MemoryQuiz from "./components/games/MemoryQuiz";
 import AdaptiveQuiz from "./components/games/AdaptiveQuiz";
 import PatientProfileSetup from "./components/profile/PatientProfileSetup.jsx";
+import PersonalInfoPage from "./components/profile/PersonalInfoPage.jsx";
+import FamilyInfoPage from "./components/profile/FamilyInfoPage.jsx";
 import DiaryPage from "./components/diary/DiaryPage.jsx";
+import WellnessPage from "./components/wellness/WellnessPage.jsx";
 
 function ProfileGate({ children }) {
   // If the user's profile isn't complete, force them onto /profile-setup
@@ -59,8 +62,10 @@ function AppRoutes() {
           <Route path="/create-account" element={<CreateAccount />} />
           <Route path="/update-account" element={<UpdateAccount />} />
           <Route path="/profile-setup" element={<PatientProfileSetup />} />
+          <Route path="/personal-info" element={<PersonalInfoPage />} />
+          <Route path="/family-info" element={<FamilyInfoPage />} />
           <Route path="/diary" element={<DiaryPage />} />
-          <Route path="/wellness" element={<div className="text-[#1a2744] p-4">Wellness — Coming Soon</div>} />
+          <Route path="/wellness" element={<WellnessPage />} />
           <Route path="/games" element={<GamesLanding />} />
           <Route path="/games/memory-lane" element={<MemoryLane />} />
           <Route path="/games/memory-quiz" element={<MemoryQuiz />} />

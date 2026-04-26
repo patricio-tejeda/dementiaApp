@@ -9,12 +9,16 @@ router.register(r'fields', views.InputInfoPageView, basename='fields')
 router.register(r'diary', views.DiaryEntryView, basename='diary')
 router.register(r'questions', views.GeneratedQuestionView, basename='questions')
 router.register(r'attempts', views.QuestionAttemptView, basename='attempts')
+router.register(r'voicelines', views.VoicelineView, basename='voicelines')
 
 urlpatterns = [
     path('api/', include(router.urls)),
 
     # Current user's profile (auto-created on first request)
     path("api/me/profile/", views.MyProfileView.as_view(), name="my-profile"),
+
+    # Wellness
+    path("api/wellness/prompts/", views.WellnessPromptsView.as_view(), name="wellness-prompts"),
 
     # Auth
     path("api/auth/login/", TokenObtainPairView.as_view(), name="login"),

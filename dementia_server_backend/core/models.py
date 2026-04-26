@@ -23,8 +23,6 @@ class AppUser(AbstractUser):
 
 
 class PatientProfile(models.Model):
-    # One profile per user. SET_NULL on user delete would orphan data;
-    # CASCADE ensures deleting a user also deletes their patient data.
     user = models.OneToOneField(
         AppUser,
         on_delete=models.CASCADE,
@@ -38,21 +36,24 @@ class PatientProfile(models.Model):
         return name_field.answer if name_field else f"Profile #{self.id}"
 
     def data_point_count(self):
-        """Count total data points (filled profile fields + diary entries)."""
         filled_fields = self.fields.exclude(answer__exact='').exclude(answer__isnull=True).count()
         diary_count = self.diary_entries.count()
         return filled_fields + diary_count
 
     def is_complete(self):
-        """True when every required profile field has a non-empty answer."""
         required_fields = self.fields.filter(required=True)
         if not required_fields.exists():
-            # No fields seeded yet → not complete
             return False
         return not required_fields.filter(answer__in=['', None]).exists()
 
 
 class InputInfoPage(models.Model):
+    CATEGORY_CHOICES = [
+        ("personal", "Personal Info"),
+        ("family", "Family Info"),
+        ("custom", "Custom"),
+    ]
+
     profile = models.ForeignKey(
         PatientProfile,
         on_delete=models.CASCADE,
@@ -62,6 +63,11 @@ class InputInfoPage(models.Model):
 
     title = models.CharField(max_length=120)
     answer = models.TextField(blank=True)
+    category = models.CharField(
+        max_length=20,
+        choices=CATEGORY_CHOICES,
+        default="personal",
+    )
     required = models.BooleanField(default=False)
     is_custom = models.BooleanField(default=False)
     is_generated = models.BooleanField(default=False)
@@ -72,6 +78,30 @@ class InputInfoPage(models.Model):
 
     def __str__(self):
         return f"{self.title}: {self.answer[:50]}"
+
+
+def voiceline_upload_path(instance, filename):
+    """Store voicelines under media/voicelines/<profile_id>/<field_id>_<uuid><ext>"""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "webm"
+    new_name = f"{instance.field.id}_{uuid.uuid4().hex[:8]}.{ext}"
+    profile_id = instance.field.profile_id if instance.field.profile_id else "orphan"
+    return f"voicelines/{profile_id}/{new_name}"
+
+
+class Voiceline(models.Model):
+    """An audio recording attached to a specific InputInfoPage field (family member)."""
+    field = models.OneToOneField(
+        InputInfoPage,
+        on_delete=models.CASCADE,
+        related_name="voiceline",
+    )
+    audio = models.FileField(upload_to=voiceline_upload_path)
+    label = models.CharField(max_length=120, blank=True)  # optional, e.g. "Mom's birthday message"
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Voiceline for field #{self.field_id}"
 
 
 class DiaryEntry(models.Model):
@@ -191,8 +221,3 @@ class AIquestions(models.Model):
         on_delete=models.CASCADE,
         related_name="ai_interview"
     )
-
-# maybe create a class/field that allows the user to input a text/voice sample that the LLM can mimic when
-# asking questions later, then we can use the similarity evaluation, or we can tell the ai
-# to act like a caregiver would in terms of asking questions then evaluate the similarties of the 
-# ai personality/used words to that of dementia caregivers

@@ -1,17 +1,37 @@
 from rest_framework import serializers
-from .models import PatientProfile, InputInfoPage, DiaryEntry, GeneratedQuestion, QuestionAttempt, AppUser
+from .models import (
+    PatientProfile, InputInfoPage, DiaryEntry,
+    GeneratedQuestion, QuestionAttempt, AppUser, Voiceline,
+)
 from django.contrib.auth.hashers import make_password
 from django.core.exceptions import ValidationError
 from django.contrib.auth.password_validation import validate_password
 
 
 class InputInfoSerializer(serializers.ModelSerializer):
-    # id is writable so PatientProfile update() can match existing rows
     id = serializers.IntegerField(required=False)
+    has_voiceline = serializers.SerializerMethodField()
+    voiceline_url = serializers.SerializerMethodField()
 
     class Meta:
         model = InputInfoPage
-        fields = ('id', 'title', 'answer', 'required', 'is_custom', 'is_generated', 'order')
+        fields = (
+            'id', 'title', 'answer', 'category', 'required',
+            'is_custom', 'is_generated', 'order',
+            'has_voiceline', 'voiceline_url',
+        )
+
+    def get_has_voiceline(self, obj):
+        return hasattr(obj, "voiceline") and obj.voiceline is not None
+
+    def get_voiceline_url(self, obj):
+        if not hasattr(obj, "voiceline") or obj.voiceline is None:
+            return None
+        request = self.context.get("request")
+        url = obj.voiceline.audio.url
+        if request:
+            return request.build_absolute_uri(url)
+        return url
 
 
 class PatientProfileSerializer(serializers.ModelSerializer):
@@ -25,7 +45,7 @@ class PatientProfileSerializer(serializers.ModelSerializer):
         fields_data = validated_data.pop('fields', [])
         profile = PatientProfile.objects.create(**validated_data)
         for field_data in fields_data:
-            field_data.pop('id', None)  # ignore client-supplied id on create
+            field_data.pop('id', None)
             InputInfoPage.objects.create(profile=profile, **field_data)
         return profile
 
@@ -33,6 +53,9 @@ class PatientProfileSerializer(serializers.ModelSerializer):
         fields_data = validated_data.pop('fields', [])
         for field_data in fields_data:
             field_id = field_data.pop('id', None)
+            # Remove serializer-only / read-only keys before write
+            field_data.pop('has_voiceline', None)
+            field_data.pop('voiceline_url', None)
             if field_id:
                 InputInfoPage.objects.filter(
                     id=field_id, profile=instance
@@ -40,6 +63,24 @@ class PatientProfileSerializer(serializers.ModelSerializer):
             else:
                 InputInfoPage.objects.create(profile=instance, **field_data)
         return instance
+
+
+class VoicelineSerializer(serializers.ModelSerializer):
+    audio_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Voiceline
+        fields = ('id', 'field', 'audio', 'audio_url', 'label', 'created_at', 'updated_at')
+        read_only_fields = ('created_at', 'updated_at', 'audio_url')
+
+    def get_audio_url(self, obj):
+        if not obj.audio:
+            return None
+        request = self.context.get("request")
+        url = obj.audio.url
+        if request:
+            return request.build_absolute_uri(url)
+        return url
 
 
 class DiaryEntrySerializer(serializers.ModelSerializer):
@@ -52,7 +93,6 @@ class DiaryEntrySerializer(serializers.ModelSerializer):
         read_only_fields = ('date', 'created_at', 'quality', 'followup_prompt')
 
     def create(self, validated_data):
-        """Classify the entry on save so we don't re-classify on every generate."""
         entry = super().create(validated_data)
         try:
             from RAG.diary_classifier import classify_diary_entry
