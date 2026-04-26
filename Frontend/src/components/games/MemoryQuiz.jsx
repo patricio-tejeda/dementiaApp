@@ -23,11 +23,6 @@ export default function MemoryQuiz() {
   const fetchQuestions = async () => {
     if (!profile) return;
     try {
-      await apiFetch(`/api/questions/generate/`, {
-        method: "POST",
-        body: JSON.stringify({ desired_total: 18 }),
-      });
-
       const res = await apiFetch(`/api/questions/session/?mode=practice&count=${questionCount}`);
       if (!res.ok) throw new Error("Failed to load questions.");
       const data = await res.json();
@@ -43,6 +38,7 @@ export default function MemoryQuiz() {
   };
 
   useEffect(() => {
+    if (!profile?.id) return;
     fetchQuestions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id]);

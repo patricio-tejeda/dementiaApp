@@ -23,11 +23,6 @@ export default function AdaptiveQuiz() {
   const fetchAdaptive = async () => {
     if (!profile) return;
     try {
-      await apiFetch(`/api/questions/generate/`, {
-        method: "POST",
-        body: JSON.stringify({ desired_total: 18 }),
-      });
-
       const res = await apiFetch(`/api/questions/session/?mode=adaptive&count=${questionCount}`);
       if (!res.ok) {
         const data = await res.json();
@@ -48,6 +43,7 @@ export default function AdaptiveQuiz() {
   };
 
   useEffect(() => {
+    if (!profile?.id) return;
     fetchAdaptive();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id]);

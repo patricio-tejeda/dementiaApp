@@ -109,10 +109,11 @@ def _serialize_for_session(question, override_text=None, is_reprompt=False):
     }
 
 
-def build_question_session(profile, mode="practice", count=10):
+def build_question_session(profile, mode="practice", count=10, ensure_bank=False):
     count = max(1, count)
-    bank_target = max(desired_question_bank_size(profile), count * 2)
-    ensure_question_bank(profile, desired_total=bank_target, rebuild_store=False)
+    if ensure_bank:
+        bank_target = max(desired_question_bank_size(profile), count * 2)
+        ensure_question_bank(profile, desired_total=bank_target, rebuild_store=False)
 
     questions = list(GeneratedQuestion.objects.filter(profile=profile))
     if not questions:

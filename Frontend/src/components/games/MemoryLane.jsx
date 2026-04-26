@@ -341,23 +341,18 @@ export default function MemoryLane() {
     async function loadQuestionBank() {
       setLoadingQuestions(true);
       try {
-        // Prefer adaptive set (personalized by past wrong answers),
-        // then generate/fetch if still sparse.
-        let adaptiveRes = await apiFetch(`/api/questions/adaptive/?count=${MIN_MEMORY_QUESTIONS}`);
+        // Prefer adaptive set personalized by past attempts.
+        let adaptiveRes = await apiFetch(`/api/questions/session/?mode=adaptive&count=${MIN_MEMORY_QUESTIONS}`);
         let payload = adaptiveRes.ok ? await adaptiveRes.json() : [];
 
-        if (!Array.isArray(payload) || payload.length < MIN_MEMORY_QUESTIONS) {
-          await apiFetch(`/api/questions/generate/`, {
-            method: "POST",
-            body: JSON.stringify({}),
-          });
+        if (!Array.isArray(payload) || payload.length === 0) {
           const allRes = await apiFetch(`/api/questions/`);
           payload = allRes.ok ? await allRes.json() : [];
         }
 
         const normalized = (Array.isArray(payload) ? payload : [])
           .filter((q) => q.question_text && (q.correct_answer || (Array.isArray(q.options) && q.options.length)))
-          .slice(0, MIN_MEMORY_QUESTIONS)
+          .slice(0, Math.max(1, MIN_MEMORY_QUESTIONS))
           .map((q, idx) => toLaneQuestion(q, idx));
 
         if (mounted) setQuestions(normalized);

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../../api";
 
@@ -74,36 +74,13 @@ export default function GamesLanding() {
   const [generating, setGenerating] = useState(false);
   const [genMessage, setGenMessage] = useState("");
 
-  useEffect(() => {
-    let isMounted = true;
-
-    async function warmQuestionBank() {
-      try {
-        // Keep question bank fresh when opening Games.
-        await apiFetch(`/api/questions/generate/`, {
-          method: "POST",
-          body: JSON.stringify({ desired_total: 18 }),
-        });
-      } catch {
-        // Silent failure: user can still manually trigger generation.
-      } finally {
-        if (!isMounted) return;
-      }
-    }
-
-    warmQuestionBank();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
   const handleGenerate = async () => {
     setGenerating(true);
     setGenMessage("");
     try {
       const res = await apiFetch(`/api/questions/generate/`, {
         method: "POST",
-        body: JSON.stringify({ desired_total: 18 }),
+        body: JSON.stringify({ desired_total: 18, rebuild_store: true }),
       });
       const data = await res.json();
       setGenMessage(data.message || "Done!");

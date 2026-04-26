@@ -9,7 +9,7 @@ import faiss
 import pickle
 from typing import List, Dict, Any, Tuple
 from sklearn.metrics.pairwise import cosine_similarity
-from RAG.embedding import EmbeddingPipeline
+from RAG.embedding import EmbeddingPipeline, get_embedding_model
 
 class VectorStore:
     def __init__(self, persist_dir: str = "faiss_store", embedding_model: str = "all-MiniLM-L6-v2", chunk_size: int =1000, chunk_overlap: int=200):
@@ -19,7 +19,7 @@ class VectorStore:
         self.metadata = []
         self.embedding_model = embedding_model
         if not hasattr(self, "model"):
-            self.model = SentenceTransformer(embedding_model)
+            self.model = get_embedding_model(embedding_model)
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         print(f"[INFO] Loading embedded mode: {embedding_model}")

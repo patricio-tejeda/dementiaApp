@@ -8,12 +8,23 @@ from typing import List, Dict, Any, Tuple
 from sklearn.metrics.pairwise import cosine_similarity
 from RAG.data_loader import process_all_sql
 
+_MODEL_CACHE = {}
+
+
+def get_embedding_model(model_name: str = "all-MiniLM-L6-v2"):
+    model = _MODEL_CACHE.get(model_name)
+    if model is None:
+        model = SentenceTransformer(model_name)
+        _MODEL_CACHE[model_name] = model
+        print(f"[INFO] Loading embedding model: {model_name}")
+    return model
+
+
 class EmbeddingPipeline:
     def __init__(self, model_name: str = "all-MiniLM-L6-v2", chunk_size: int = 1000,  chunk_overlap=200):
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
-        self.model = SentenceTransformer(model_name)
-        print(f"[INFO] Loading embedding model: {model_name}")
+        self.model = get_embedding_model(model_name)
 
     def chunk_documents(self, documents: List[Any]) -> List[Any]:
         text_splitter = RecursiveCharacterTextSplitter(

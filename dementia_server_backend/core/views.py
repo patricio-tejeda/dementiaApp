@@ -150,13 +150,14 @@ class GeneratedQuestionView(viewsets.ModelViewSet):
         """POST /api/questions/generate/ — rebuild FAISS and generate questions."""
         profile = get_or_create_profile(request.user)
         desired_total = int(request.data.get("desired_total") or desired_question_bank_size(profile))
+        rebuild_store = bool(request.data.get("rebuild_store", False))
         existing = GeneratedQuestion.objects.filter(profile=profile).count()
 
         try:
             total_questions = ensure_question_bank(
                 profile,
                 desired_total=desired_total,
-                rebuild_store=True,
+                rebuild_store=rebuild_store,
             )
         except MissingGroqAPIKeyError as exc:
             return Response(
@@ -181,7 +182,12 @@ class GeneratedQuestionView(viewsets.ModelViewSet):
         count = int(request.query_params.get("count", 8))
 
         try:
-            session_questions = build_question_session(profile, mode="adaptive", count=count)
+            session_questions = build_question_session(
+                profile,
+                mode="adaptive",
+                count=count,
+                ensure_bank=False,
+            )
         except MissingGroqAPIKeyError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
@@ -198,7 +204,12 @@ class GeneratedQuestionView(viewsets.ModelViewSet):
         count = int(request.query_params.get("count", 10))
 
         try:
-            session_questions = build_question_session(profile, mode=mode, count=count)
+            session_questions = build_question_session(
+                profile,
+                mode=mode,
+                count=count,
+                ensure_bank=False,
+            )
         except MissingGroqAPIKeyError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
