@@ -2,6 +2,8 @@ from rest_framework import viewsets, generics, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.db.models import F
+from django.utils import timezone
 from .serializers import (
     PatientProfileSerializer,
     InputInfoSerializer,
@@ -12,6 +14,8 @@ from .serializers import (
     AppUserUpdateSerializer,
 )
 from .models import PatientProfile, InputInfoPage, DiaryEntry, GeneratedQuestion, QuestionAttempt, AppUser
+from RAG.groq_client import MissingGroqAPIKeyError
+from .question_sessions import build_question_session, desired_question_bank_size, ensure_question_bank
 
 
 # ------------------------------------------------------------------
@@ -145,58 +149,80 @@ class GeneratedQuestionView(viewsets.ModelViewSet):
     def generate(self, request):
         """POST /api/questions/generate/ — rebuild FAISS and generate questions."""
         profile = get_or_create_profile(request.user)
-
-        # Rebuild FAISS index
-        from RAG.data_loader import process_all_sql
-        from RAG.vector_database import VectorStore
-        docs = process_all_sql('.')
-        store = VectorStore('faiss_store')
-        store.build_from_document(docs)
-
+        desired_total = int(request.data.get("desired_total") or desired_question_bank_size(profile))
         existing = GeneratedQuestion.objects.filter(profile=profile).count()
-        cap = profile.data_point_count()
-        needed = cap - existing
 
-        if needed <= 0:
-            return Response({
-                "message": f"Already have {existing} questions (cap is {cap} based on your data). No new ones generated.",
-                "total": existing,
-                "cap": cap,
-            })
-
-        from RAG.question_generator import generate_questions_for_profile
-        new_questions = generate_questions_for_profile(profile, count=needed)
+        try:
+            total_questions = ensure_question_bank(
+                profile,
+                desired_total=desired_total,
+                rebuild_store=True,
+            )
+        except MissingGroqAPIKeyError as exc:
+            return Response(
+                {"error": str(exc)},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
         return Response({
-            "message": f"Generated {len(new_questions)} new questions.",
-            "total": existing + len(new_questions),
-            "cap": cap,
-            "questions": GeneratedQuestionSerializer(new_questions, many=True).data,
+            "message": (
+                f"Question bank ready with {total_questions} questions."
+                if total_questions > existing
+                else f"Question bank already had {total_questions} questions."
+            ),
+            "total": total_questions,
+            "target": desired_total,
         })
 
     @action(detail=False, methods=['get'])
     def adaptive(self, request):
         """GET /api/questions/adaptive/?count=5 — weighted question selection."""
-        count = int(request.query_params.get('count', 5))
+        profile = get_or_create_profile(request.user)
+        count = int(request.query_params.get("count", 8))
 
-        questions = GeneratedQuestion.objects.filter(profile__user=request.user)
-        if not questions.exists():
+        try:
+            session_questions = build_question_session(profile, mode="adaptive", count=count)
+        except MissingGroqAPIKeyError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        if not session_questions:
             return Response({"error": "No questions available. Generate some first."}, status=404)
 
-        scored = []
-        for q in questions:
-            total = q.times_asked()
-            wrong = q.times_wrong()
-            if total == 0:
-                score = 10
-            else:
-                score = 1 + (wrong / total) * 9
-            scored.append((score, q))
+        return Response(session_questions)
 
-        scored.sort(key=lambda x: x[0], reverse=True)
-        selected = [q for _, q in scored[:count]]
+    @action(detail=False, methods=['get'])
+    def session(self, request):
+        """GET /api/questions/session/?mode=practice|adaptive&count=10 — fresh game session."""
+        profile = get_or_create_profile(request.user)
+        mode = request.query_params.get("mode", "practice")
+        count = int(request.query_params.get("count", 10))
 
-        return Response(GeneratedQuestionSerializer(selected, many=True).data)
+        try:
+            session_questions = build_question_session(profile, mode=mode, count=count)
+        except MissingGroqAPIKeyError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        if not session_questions:
+            return Response({"error": "No questions available. Generate some first."}, status=404)
+
+        return Response(session_questions)
+
+    @action(detail=True, methods=['post'])
+    def record_reprompt(self, request, pk=None):
+        """
+        POST /api/questions/<id>/record_reprompt/
+        Increments reprompt_count and stores when the reprompt was scheduled.
+        """
+        question = self.get_object()
+        question.reprompt_count = F("reprompt_count") + 1
+        question.last_reprompted_at = timezone.now()
+        question.save(update_fields=["reprompt_count", "last_reprompted_at"])
+        question.refresh_from_db(fields=["id", "reprompt_count", "last_reprompted_at"])
+        return Response({
+            "id": question.id,
+            "reprompt_count": question.reprompt_count,
+            "last_reprompted_at": question.last_reprompted_at,
+        }, status=status.HTTP_200_OK)
 
 
 # ------------------------------------------------------------------

@@ -75,7 +75,9 @@ class GeneratedQuestionSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'profile', 'question_text', 'options', 'correct_answer',
             'category', 'question_type', 'source_diary_entry',
-            'created_at', 'times_asked', 'times_correct', 'times_wrong',
+            'reprompt_count', 'last_reprompted_at',
+            'tone_score', 'tone_notes', 'created_at',
+            'times_asked', 'times_correct', 'times_wrong',
         )
         read_only_fields = ('created_at',)
 

@@ -140,6 +140,10 @@ class GeneratedQuestion(models.Model):
         blank=True,
         related_name="generated_questions",
     )
+    reprompt_count = models.PositiveIntegerField(default=0)
+    last_reprompted_at = models.DateTimeField(null=True, blank=True)
+    tone_score = models.PositiveSmallIntegerField(null=True, blank=True)
+    tone_notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

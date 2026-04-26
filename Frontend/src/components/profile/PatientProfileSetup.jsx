@@ -3,6 +3,14 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { apiFetch } from "../../api";
 
+const AI_FOLLOW_UP_QUESTIONS = [
+  "What is a favorite family holiday memory?",
+  "What songs or artists does the patient enjoy most?",
+  "What daily routine helps the patient feel calm?",
+  "What places are most meaningful to the patient?",
+  "What hobbies did the patient enjoy most in adulthood?",
+];
+
 export default function PatientProfileSetup() {
   const { profile, refreshProfile } = useAuth();
   const navigate = useNavigate();
@@ -15,17 +23,42 @@ export default function PatientProfileSetup() {
 
   // Load fields from the user's existing (backend-seeded) profile
   useEffect(() => {
-    if (!profile) {
+    let mounted = true;
+
+    async function ensureProfileLoaded() {
+      if (profile) {
+        const sortedExisting = [...(profile.fields || [])].sort(
+          (a, b) => (a.order ?? 0) - (b.order ?? 0)
+        );
+        if (mounted) {
+          setFields(sortedExisting);
+          setLoading(false);
+        }
+        return;
+      }
+
+      setLoading(true);
+      const loadedProfile = await refreshProfile();
+      if (!mounted) return;
+
+      if (!loadedProfile) {
+        setFields([]);
+        setLoading(false);
+        return;
+      }
+
+      const sorted = [...(loadedProfile.fields || [])].sort(
+        (a, b) => (a.order ?? 0) - (b.order ?? 0)
+      );
+      setFields(sorted);
       setLoading(false);
-      return;
     }
-    // profile.fields is already on the object from the serializer
-    const sorted = [...(profile.fields || [])].sort(
-      (a, b) => (a.order ?? 0) - (b.order ?? 0)
-    );
-    setFields(sorted);
-    setLoading(false);
-  }, [profile]);
+
+    ensureProfileLoaded();
+    return () => {
+      mounted = false;
+    };
+  }, [profile, refreshProfile]);
 
   const handleAnswerChange = (index, value) => {
     setFields((prev) => prev.map((f, i) => (i === index ? { ...f, answer: value } : f)));
@@ -45,7 +78,7 @@ export default function PatientProfileSetup() {
         answer: "",
         required: false,
         is_custom: true,
-        is_generated = false,
+        is_generated: false,
         order: prev.length + 1,
       },
     ]);
@@ -55,21 +88,23 @@ export default function PatientProfileSetup() {
     setFields((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // have the option for the AI to generate more questions for the dementia patient profile so that the 
-  // db has more information, but the caregiver doesn't have to come up with new questions on their own
   const addAIFields = () => {
-    setFields((prev) => [
-      ...prev,
-      {
-        title: "",
-        answer: "",
-        required: false,
-        is_custom: false,
-        is_generated = true,
-        order: prev.length + 1,
-      },
-    ])
-  }
+    setFields((prev) => {
+      const existingTitles = new Set(prev.map((f) => (f.title || "").trim().toLowerCase()));
+      const toAdd = AI_FOLLOW_UP_QUESTIONS
+        .filter((title) => !existingTitles.has(title.toLowerCase()))
+        .slice(0, 5)
+        .map((title, idx) => ({
+          title,
+          answer: "",
+          required: false,
+          is_custom: false,
+          is_generated: true,
+          order: prev.length + idx + 1,
+        }));
+      return [...prev, ...toAdd];
+    });
+  };
 
   const handleSubmit = async () => {
     const newErrors = {};
@@ -88,6 +123,10 @@ export default function PatientProfileSetup() {
 
     setSaving(true);
     try {
+      if (!profile?.id) {
+        throw new Error("Profile not loaded yet. Please wait a moment and try again.");
+      }
+
       // PATCH the existing profile with updated fields
       const res = await apiFetch(`/api/profiles/${profile.id}/`, {
         method: "PATCH",
@@ -112,6 +151,17 @@ export default function PatientProfileSetup() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <p className="text-gray-500">Loading profile...</p>
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-[#1a2744] mb-2">Preparing profile setup...</h2>
+          <p className="text-gray-500">Please wait while we load your profile questions.</p>
+        </div>
       </div>
     );
   }

@@ -1,9 +1,5 @@
-import os
 import json
-from langchain_groq import ChatGroq
-from dotenv import load_dotenv
-
-load_dotenv()
+from RAG.groq_client import build_chat_groq
 
 
 def classify_diary_entry(entry_text: str) -> dict:
@@ -28,8 +24,7 @@ def classify_diary_entry(entry_text: str) -> dict:
     if len(text) < 4:
         return {"quality": "low", "followup_prompt": None}
 
-    groq_api_key = os.getenv("GROQ_API_KEY")
-    llm = ChatGroq(groq_api_key=groq_api_key, model_name="llama-3.3-70b-versatile")
+    llm = build_chat_groq("llama-3.3-70b-versatile")
 
     prompt = f"""You are triaging a diary entry written by a dementia patient. Classify it into exactly one of three categories.
 

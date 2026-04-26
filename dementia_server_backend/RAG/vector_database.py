@@ -10,8 +10,6 @@ import pickle
 from typing import List, Dict, Any, Tuple
 from sklearn.metrics.pairwise import cosine_similarity
 from RAG.embedding import EmbeddingPipeline
-from sentence_transformers import SentenceTransformer
-SentenceTransformer("all-MiniLM-L6-v2")
 
 class VectorStore:
     def __init__(self, persist_dir: str = "faiss_store", embedding_model: str = "all-MiniLM-L6-v2", chunk_size: int =1000, chunk_overlap: int=200):

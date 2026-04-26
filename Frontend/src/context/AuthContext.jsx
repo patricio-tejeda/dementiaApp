@@ -16,6 +16,16 @@ export function AuthProvider({ children }) {
 
   const [profile, setProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  const clearAuthState = useCallback(() => {
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("refresh_token");
+    localStorage.removeItem("user");
+    setTokens({ access: null, refresh: null });
+    setUser(null);
+    setProfile(null);
+  }, []);
 
   const refreshProfile = useCallback(async () => {
     const token = localStorage.getItem("access_token");
@@ -29,6 +39,9 @@ export function AuthProvider({ children }) {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
+        if (res.status === 401) {
+          clearAuthState();
+        }
         setProfile(null);
         return null;
       }
@@ -42,7 +55,7 @@ export function AuthProvider({ children }) {
     } finally {
       setProfileLoading(false);
     }
-  }, []);
+  }, [clearAuthState]);
 
   const login = useCallback(async (username, password) => {
     const res = await fetch(`${API_BASE}/api/auth/login/`, {
@@ -73,24 +86,30 @@ export function AuthProvider({ children }) {
 
     // Fetch profile (auto-creates on backend if missing)
     await refreshProfile();
+    setAuthChecked(true);
   }, [refreshProfile]);
 
   const logout = useCallback(() => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("user");
-    setTokens({ access: null, refresh: null });
-    setUser(null);
-    setProfile(null);
-  }, []);
+    clearAuthState();
+    setAuthChecked(true);
+  }, [clearAuthState]);
 
-  // On app mount, if a token exists, fetch the profile once
+  // On app mount (or token change), fetch profile once if logged in.
   useEffect(() => {
-    if (tokens.access && !profile) {
-      refreshProfile();
+    let mounted = true;
+
+    async function bootstrapAuth() {
+      if (tokens.access) {
+        await refreshProfile();
+      }
+      if (mounted) setAuthChecked(true);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+
+    bootstrapAuth();
+    return () => {
+      mounted = false;
+    };
+  }, [tokens.access, refreshProfile]);
 
   return (
     <AuthContext.Provider
@@ -99,6 +118,7 @@ export function AuthProvider({ children }) {
         tokens,
         profile,
         profileLoading,
+        authChecked,
         login,
         logout,
         refreshProfile,

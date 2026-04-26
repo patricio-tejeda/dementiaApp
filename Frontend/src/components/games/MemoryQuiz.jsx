@@ -18,24 +18,31 @@ export default function MemoryQuiz() {
   const [submitting, setSubmitting] = useState(false);
 
   const navigate = useNavigate();
+  const questionCount = 12;
+
+  const fetchQuestions = async () => {
+    if (!profile) return;
+    try {
+      await apiFetch(`/api/questions/generate/`, {
+        method: "POST",
+        body: JSON.stringify({ desired_total: 18 }),
+      });
+
+      const res = await apiFetch(`/api/questions/session/?mode=practice&count=${questionCount}`);
+      if (!res.ok) throw new Error("Failed to load questions.");
+      const data = await res.json();
+      if (data.length === 0) {
+        setError("No questions available yet. Please generate questions first.");
+      }
+      setQuestions(data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    async function fetchQuestions() {
-      if (!profile) return;
-      try {
-        const res = await apiFetch(`/api/questions/?profile=${profile.id}`);
-        if (!res.ok) throw new Error("Failed to load questions.");
-        const data = await res.json();
-        if (data.length === 0) {
-          setError("No questions available yet. Please generate questions first.");
-        }
-        setQuestions(data.sort(() => Math.random() - 0.5));
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    }
     fetchQuestions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id]);
@@ -43,12 +50,24 @@ export default function MemoryQuiz() {
   const q = questions[current];
   const isFreeRecall = q?.question_type === "free_recall";
 
-  const handleSelect = (option) => {
+  const handleSelect = async (option) => {
     if (showResult) return;
     setSelected(option);
     setShowResult(true);
     if (option === q.correct_answer) {
       setScore((s) => s + 1);
+    }
+
+    try {
+      await apiFetch(`/api/attempts/`, {
+        method: "POST",
+        body: JSON.stringify({
+          question: q.id,
+          selected_answer: option,
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to record attempt:", err);
     }
   };
 
@@ -84,13 +103,14 @@ export default function MemoryQuiz() {
   };
 
   const handleRestart = () => {
-    setQuestions((prev) => [...prev].sort(() => Math.random() - 0.5));
+    setLoading(true);
     setCurrent(0);
     setSelected(null);
     setShowResult(false);
     setScore(0);
     setFinished(false);
     setFreeRecallText("");
+    fetchQuestions();
   };
 
   if (loading) {

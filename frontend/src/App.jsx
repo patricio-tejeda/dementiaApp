@@ -17,15 +17,24 @@ import DiaryPage from "./components/diary/DiaryPage.jsx";
 function ProfileGate({ children }) {
   // If the user's profile isn't complete, force them onto /profile-setup
   // regardless of the URL they typed in.
-  const { profile, profileLoading } = useAuth();
+  const { profile, profileLoading, authChecked } = useAuth();
   const location = useLocation();
 
-  if (profileLoading || !profile) {
+  if (!authChecked || profileLoading) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#f5f0e8" }}>
         <p style={{ color: "#6a5a40" }}>Loading your profile...</p>
       </div>
     );
+  }
+
+  // Force setup flow on first login until we have profile data and required answers.
+  if (!profile && location.pathname !== "/profile-setup") {
+    return <Navigate to="/profile-setup" replace />;
+  }
+
+  if (!profile) {
+    return children;
   }
 
   if (!profile.is_complete && location.pathname !== "/profile-setup") {

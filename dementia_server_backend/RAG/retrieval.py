@@ -1,8 +1,5 @@
-import os
-from langchain_groq import ChatGroq
 from RAG.vector_database import VectorStore
-from dotenv import load_dotenv
-load_dotenv()
+from RAG.groq_client import build_chat_groq
 
 
 
@@ -19,8 +16,7 @@ class RAGSearch:
         else:
             self.vectorstore.load()
         # initialize grog llm
-        groq_api_key = os.getenv("GROQ_API_KEY") # test by hardcoding key
-        self.llm = ChatGroq(groq_api_key = groq_api_key, model_name = llm_model)
+        self.llm = build_chat_groq(llm_model)
         print(f"[INFO] Groq LLM initialized: {llm_model}")
 
     def search_and_summarize(self, query: str, top_k: int = 5) -> str:
