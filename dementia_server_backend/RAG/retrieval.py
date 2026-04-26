@@ -1,6 +1,6 @@
 from RAG.vector_database import VectorStore
 from RAG.groq_client import build_chat_groq
-
+import os
 
 
 class RAGSearch:
