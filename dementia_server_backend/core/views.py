@@ -1,5 +1,6 @@
 from rest_framework import viewsets, generics, permissions, status
 from rest_framework.decorators import action
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.db.models import F
@@ -12,8 +13,12 @@ from .serializers import (
     QuestionAttemptSerializer,
     AppUserSerializer,
     AppUserUpdateSerializer,
+    VoicelineSerializer,
 )
-from .models import PatientProfile, InputInfoPage, DiaryEntry, GeneratedQuestion, QuestionAttempt, AppUser
+from .models import (
+    PatientProfile, InputInfoPage, DiaryEntry,
+    GeneratedQuestion, QuestionAttempt, AppUser, Voiceline,
+)
 from RAG.groq_client import MissingGroqAPIKeyError
 from .question_sessions import build_question_session, desired_question_bank_size, ensure_question_bank
 from .profile_question_generator import generate_profile_followup_questions
@@ -23,32 +28,34 @@ from .profile_question_generator import generate_profile_followup_questions
 # Helper: seed the 16 required profile fields on first profile create
 # ------------------------------------------------------------------
 DEFAULT_PROFILE_FIELDS = [
-    ("Patient Name", True),
-    ("Date of Birth", True),
-    ("Hometown", True),
-    ("Current City", True),
-    ("Mother's Name", True),
-    ("Father's Name", True),
-    ("Number of Siblings", True),
-    ("Spouse's Name", False),
-    ("Number of Children", False),
-    ("Elementary School", True),
-    ("High School", True),
-    ("College", False),
-    ("Degree", False),
-    ("Occupation", True),
-    ("Favorite Color", False),
-    ("Favorite Food", False),
+    # (title, required, category)
+    ("Patient Name", True, "personal"),
+    ("Date of Birth", True, "personal"),
+    ("Hometown", True, "personal"),
+    ("Current City", True, "personal"),
+    ("Mother's Name", True, "family"),
+    ("Father's Name", True, "family"),
+    ("Number of Siblings", True, "family"),
+    ("Spouse's Name", False, "family"),
+    ("Number of Children", False, "family"),
+    ("Elementary School", True, "personal"),
+    ("High School", True, "personal"),
+    ("College", False, "personal"),
+    ("Degree", False, "personal"),
+    ("Occupation", True, "personal"),
+    ("Favorite Color", False, "personal"),
+    ("Favorite Food", False, "personal"),
 ]
 
 
 def seed_profile_fields(profile):
     """Create the default fields for a brand-new profile."""
-    for order, (title, required) in enumerate(DEFAULT_PROFILE_FIELDS):
+    for order, (title, required, category) in enumerate(DEFAULT_PROFILE_FIELDS):
         InputInfoPage.objects.create(
             profile=profile,
             title=title,
             required=required,
+            category=category,
             order=order,
         )
 
@@ -61,7 +68,6 @@ def get_or_create_profile(user):
     """
     with transaction.atomic():
         profile, _ = PatientProfile.objects.get_or_create(user=user)
-        # Only seed if fields haven't been seeded yet (idempotent).
         if not profile.fields.exists():
             seed_profile_fields(profile)
     return profile
@@ -71,10 +77,6 @@ def get_or_create_profile(user):
 # Profile
 # ------------------------------------------------------------------
 class PatientProfileView(viewsets.ModelViewSet):
-    """
-    CRUD for the logged-in user's PatientProfile only.
-    Listing always returns exactly one profile (the user's own).
-    """
     serializer_class = PatientProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -108,17 +110,11 @@ class PatientProfileView(viewsets.ModelViewSet):
 
 
 class MyProfileView(APIView):
-    """
-    GET /api/me/profile/
-    Returns the logged-in user's profile, auto-creating it (with seeded fields)
-    on first call. Response includes `is_complete` so the frontend can gate
-    on setup completion.
-    """
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         profile = get_or_create_profile(request.user)
-        data = PatientProfileSerializer(profile).data
+        data = PatientProfileSerializer(profile, context={"request": request}).data
         data["is_complete"] = profile.is_complete()
         return Response(data)
 
@@ -131,12 +127,82 @@ class InputInfoPageView(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        # Only fields belonging to the logged-in user's profile
-        return InputInfoPage.objects.filter(profile__user=self.request.user)
+        qs = InputInfoPage.objects.filter(profile__user=self.request.user)
+        category = self.request.query_params.get("category")
+        if category:
+            qs = qs.filter(category=category)
+        return qs
 
     def perform_create(self, serializer):
         profile = get_or_create_profile(self.request.user)
         serializer.save(profile=profile)
+
+
+# ------------------------------------------------------------------
+# Voicelines
+# ------------------------------------------------------------------
+class VoicelineView(viewsets.ModelViewSet):
+    """
+    Upload, list, replace, and delete voicelines attached to family fields.
+
+    POST /api/voicelines/  (multipart: field=<id>, audio=<file>, label=<optional>)
+       — if a voiceline already exists for that field, it's replaced.
+    GET  /api/voicelines/?field=<id>
+    DELETE /api/voicelines/<id>/
+    """
+    serializer_class = VoicelineSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get_queryset(self):
+        qs = Voiceline.objects.filter(field__profile__user=self.request.user)
+        field_id = self.request.query_params.get("field")
+        if field_id:
+            qs = qs.filter(field_id=field_id)
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        field_id = request.data.get("field")
+        if not field_id:
+            return Response({"error": "field id is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Make sure the field belongs to the logged-in user
+        try:
+            field = InputInfoPage.objects.get(id=field_id, profile__user=request.user)
+        except InputInfoPage.DoesNotExist:
+            return Response({"error": "field not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        if field.category != "family":
+            return Response(
+                {"error": "Voicelines are only allowed on family fields."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        audio = request.FILES.get("audio")
+        if not audio:
+            return Response({"error": "audio file is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        label = request.data.get("label", "")
+
+        # If one already exists, replace the file (and delete the old one from disk)
+        existing = Voiceline.objects.filter(field=field).first()
+        if existing:
+            existing.audio.delete(save=False)
+            existing.audio = audio
+            existing.label = label
+            existing.save()
+            serializer = self.get_serializer(existing)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        voiceline = Voiceline.objects.create(field=field, audio=audio, label=label)
+        serializer = self.get_serializer(voiceline)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def perform_destroy(self, instance):
+        # Remove the file from disk too
+        if instance.audio:
+            instance.audio.delete(save=False)
+        instance.delete()
 
 
 # ------------------------------------------------------------------
@@ -170,7 +236,6 @@ class GeneratedQuestionView(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'])
     def generate(self, request):
-        """POST /api/questions/generate/ — rebuild FAISS and generate questions."""
         profile = get_or_create_profile(request.user)
         desired_total = int(request.data.get("desired_total") or desired_question_bank_size(profile))
         rebuild_store = bool(request.data.get("rebuild_store", False))
@@ -200,7 +265,6 @@ class GeneratedQuestionView(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def adaptive(self, request):
-        """GET /api/questions/adaptive/?count=5 — weighted question selection."""
         profile = get_or_create_profile(request.user)
         count = int(request.query_params.get("count", 8))
 
@@ -221,7 +285,6 @@ class GeneratedQuestionView(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def session(self, request):
-        """GET /api/questions/session/?mode=practice|adaptive&count=10 — fresh game session."""
         profile = get_or_create_profile(request.user)
         mode = request.query_params.get("mode", "practice")
         count = int(request.query_params.get("count", 10))
@@ -243,10 +306,6 @@ class GeneratedQuestionView(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def record_reprompt(self, request, pk=None):
-        """
-        POST /api/questions/<id>/record_reprompt/
-        Increments reprompt_count and stores when the reprompt was scheduled.
-        """
         question = self.get_object()
         question.reprompt_count = F("reprompt_count") + 1
         question.last_reprompted_at = timezone.now()
@@ -271,17 +330,51 @@ class QuestionAttemptView(viewsets.ModelViewSet):
 
 
 # ------------------------------------------------------------------
+# Wellness prompts
+# ------------------------------------------------------------------
+class WellnessPromptsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from RAG.wellness_generator import generate_wellness_prompts
+
+        profile = get_or_create_profile(request.user)
+        count = int(request.query_params.get("count", 30))
+        count = max(5, min(count, 50))
+
+        personal_fields = list(
+            InputInfoPage.objects.filter(profile=profile, category="personal").values("title", "answer")
+        )
+        family_fields = list(
+            InputInfoPage.objects.filter(profile=profile, category="family").values("title", "answer")
+        )
+        diary_entries = list(
+            DiaryEntry.objects.filter(profile=profile).values("text", "quality")
+        )
+
+        try:
+            prompts = generate_wellness_prompts(
+                personal_fields=personal_fields,
+                family_fields=family_fields,
+                diary_entries=diary_entries,
+                count=count,
+            )
+        except MissingGroqAPIKeyError as exc:
+            return Response({"error": str(exc), "prompts": []}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        return Response({"prompts": prompts})
+
+
+# ------------------------------------------------------------------
 # Users
 # ------------------------------------------------------------------
 class AppUserCreateAPIView(generics.CreateAPIView):
-    """Register a new user, no auth required."""
     queryset = AppUser.objects.all()
     serializer_class = AppUserSerializer
     permission_classes = [permissions.AllowAny]
 
 
 class AppUserDetailUpdateView(generics.RetrieveUpdateAPIView):
-    """GET/PUT/PATCH /me/ — current logged-in user."""
     serializer_class = AppUserUpdateSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -290,12 +383,10 @@ class AppUserDetailUpdateView(generics.RetrieveUpdateAPIView):
 
 
 class AppUserDetailByIdView(generics.RetrieveAPIView):
-    """GET /api/users/<id>/ — only return the logged-in user's own record."""
     serializer_class = AppUserSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
-        # Only allow fetching your own record to prevent user enumeration
         user_id = self.kwargs.get("id")
         if user_id != self.request.user.id:
             from django.http import Http404
