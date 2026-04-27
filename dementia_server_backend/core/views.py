@@ -16,6 +16,7 @@ from .serializers import (
 from .models import PatientProfile, InputInfoPage, DiaryEntry, GeneratedQuestion, QuestionAttempt, AppUser
 from RAG.groq_client import MissingGroqAPIKeyError
 from .question_sessions import build_question_session, desired_question_bank_size, ensure_question_bank
+from .profile_question_generator import generate_profile_followup_questions
 
 
 # ------------------------------------------------------------------
@@ -82,6 +83,28 @@ class PatientProfileView(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+
+    @action(detail=True, methods=['post'])
+    def generate_followups(self, request, pk=None):
+        """POST /api/profiles/<id>/generate_followups/ - AI-generated profile prompts."""
+        profile = self.get_object()
+        count = int(request.data.get("count", 5))
+        count = max(1, min(count, 10))
+
+        try:
+            questions = generate_profile_followup_questions(profile, count=count)
+        except MissingGroqAPIKeyError as exc:
+            return Response(
+                {"error": str(exc)},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        except Exception as exc:
+            return Response(
+                {"error": f"Failed to generate follow-up questions: {exc}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        return Response({"questions": questions}, status=status.HTTP_200_OK)
 
 
 class MyProfileView(APIView):

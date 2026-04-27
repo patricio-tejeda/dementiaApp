@@ -3,14 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { apiFetch } from "../../api";
 
-const AI_FOLLOW_UP_QUESTIONS = [
-  "What is a favorite family holiday memory?",
-  "What songs or artists does the patient enjoy most?",
-  "What daily routine helps the patient feel calm?",
-  "What places are most meaningful to the patient?",
-  "What hobbies did the patient enjoy most in adulthood?",
-];
-
 export default function PatientProfileSetup() {
   const { profile, refreshProfile } = useAuth();
   const navigate = useNavigate();
@@ -18,6 +10,7 @@ export default function PatientProfileSetup() {
   const [fields, setFields] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [errors, setErrors] = useState({});
   const [saved, setSaved] = useState(false);
 
@@ -88,22 +81,47 @@ export default function PatientProfileSetup() {
     setFields((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const addAIFields = () => {
-    setFields((prev) => {
-      const existingTitles = new Set(prev.map((f) => (f.title || "").trim().toLowerCase()));
-      const toAdd = AI_FOLLOW_UP_QUESTIONS
-        .filter((title) => !existingTitles.has(title.toLowerCase()))
-        .slice(0, 5)
-        .map((title, idx) => ({
-          title,
-          answer: "",
-          required: false,
-          is_custom: false,
-          is_generated: true,
-          order: prev.length + idx + 1,
-        }));
-      return [...prev, ...toAdd];
-    });
+  const addAIFields = async () => {
+    if (!profile?.id || generating) return;
+
+    setGenerating(true);
+    try {
+      const res = await apiFetch(`/api/profiles/${profile.id}/generate_followups/`, {
+        method: "POST",
+        body: JSON.stringify({ count: 5 }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Failed to generate profile questions.");
+      }
+
+      const data = await res.json();
+      const suggestions = Array.isArray(data.questions) ? data.questions : [];
+      if (suggestions.length === 0) {
+        alert("No new profile questions were suggested right now. Try again after adding a bit more profile information.");
+        return;
+      }
+
+      setFields((prev) => {
+        const existingTitles = new Set(prev.map((f) => (f.title || "").trim().toLowerCase()));
+        const toAdd = suggestions
+          .filter((title) => title && !existingTitles.has(title.trim().toLowerCase()))
+          .map((title, idx) => ({
+            title: title.trim(),
+            answer: "",
+            required: false,
+            is_custom: false,
+            is_generated: true,
+            order: prev.length + idx + 1,
+          }));
+        return [...prev, ...toAdd];
+      });
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const handleSubmit = async () => {
@@ -244,9 +262,10 @@ export default function PatientProfileSetup() {
 
         <button
           onClick={addAIFields}
+          disabled={generating}
           className="mt-4 w-full py-3 border-2 border-dashed border-gray-300 rounded-xl text-gray-400 hover:border-[#1a2744] hover:text-[#1a2744] transition-colors text-sm"
         >
-          + Generate more questions
+          {generating ? "Generating questions..." : "+ Generate more questions"}
         </button>
 
         <button
