@@ -1,46 +1,22 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { apiFetch } from "../../api";
 
-// ─── Mock data (swap with API calls later) ───────────────────────────
-// Each question has an id, the question text, and the expected answer.
-// For the real app, answers come from the user's profile data entered by family.
-const QUESTIONS = [
-  { id: 1, question: "What's your birthday?", answer: "january 1" },
-  { id: 2, question: "What's your favorite color?", answer: "blue" },
-  { id: 3, question: "What's your mom's birthday?", answer: "march 15" },
-  { id: 4, question: "What's your dad's birthday?", answer: "june 20" },
-  { id: 5, question: "How many siblings do you have?", answer: "2" },
-  { id: 6, question: "What are your siblings' names?", answer: "john, jane" },
-  { id: 7, question: "What's your sibling's birthday?", answer: "april 10" },
-  { id: 8, question: "Where did you go for elementary school?", answer: "lincoln elementary" },
-  { id: 9, question: "Where did you go for middle school?", answer: "washington middle" },
-  { id: 10, question: "Where did you go for high school?", answer: "central high" },
-  { id: 11, question: "What college did you attend?", answer: "university of arizona" },
-  { id: 12, question: "What was your Bachelor's in?", answer: "psychology" },
-  { id: 13, question: "Who is your best friend?", answer: "sarah" },
-  { id: 14, question: "What was your first job?", answer: "cashier" },
-  { id: 15, question: "What was your mom's job?", answer: "teacher" },
-  { id: 16, question: "What was your dad's job?", answer: "engineer" },
-  { id: 17, question: "Where did your parents meet?", answer: "college" },
-  { id: 18, question: "Where is your mom from?", answer: "tucson" },
-];
-
-// ─── Path layout: two rows, snaking right then left ──────────────────
-// Top row: 1–9 left to right, Bottom row: 10–18 right to left (matches slide 7)
 function getNodePositions(count, containerWidth) {
-  const cols = 9;
+  const cols = 6;
   const padX = 52;
   const usable = containerWidth - padX * 2;
   const gapX = usable / (cols - 1);
-  const rowY = [100, 260]; // top row y, bottom row y
 
   const positions = [];
   for (let i = 0; i < count; i++) {
-    const row = i < cols ? 0 : 1;
-    const colIndex = i < cols ? i : cols - 1 - (i - cols);
+    const row = Math.floor(i / cols);
+    const isEvenRow = row % 2 === 0;
+    const col = i % cols;
+    const colIndex = isEvenRow ? col : cols - 1 - col;
     positions.push({
       x: padX + colIndex * gapX,
-      y: rowY[row] + (row === 0 ? (i % 2 === 0 ? 0 : 18) : (i % 2 === 0 ? 18 : 0)),
+      y: 90 + row * 120 + (i % 2 === 0 ? 0 : 16),
     });
   }
   return positions;
@@ -60,6 +36,50 @@ function buildPathD(positions) {
     d += ` C ${cpx1} ${cpy1}, ${cpx2} ${cpy2}, ${curr.x} ${curr.y}`;
   }
   return d;
+}
+
+const MIN_MEMORY_QUESTIONS = 10;
+
+function caregiverPrompt(questionText) {
+  const cleaned = String(questionText || "").trim().replace(/\s+/g, " ");
+  if (!cleaned) {
+    return "Let's take our time together. Which answer feels right?";
+  }
+  const noQ = cleaned.replace(/\?+$/, "");
+  return `Let's remember together: ${noQ}?`;
+}
+
+function shuffle(items) {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+function toLaneQuestion(question, index) {
+  const options = Array.isArray(question.options) ? question.options : [];
+  const correct = String(question.correct_answer || "").trim();
+  const baseChoices = options.map((opt, idx) => ({
+    id: `${question.id}-opt-${idx + 1}`,
+    text: String(opt || ""),
+  }));
+  const choices = baseChoices.length >= 2
+    ? baseChoices
+    : [
+        { id: `${question.id}-opt-1`, text: correct || "I remember this detail" },
+        { id: `${question.id}-opt-2`, text: "I need another hint" },
+      ];
+
+  return {
+    id: `memory-q-${question.id}`,
+    sourceQuestionId: question.id,
+    prompt: caregiverPrompt(question.question_text),
+    correctAnswer: correct || choices[0].text,
+    choices: shuffle(choices),
+    displayNumber: index + 1,
+  };
 }
 
 // ─── Confetti ────────────────────────────────────────────────────────
@@ -129,25 +149,32 @@ function Confetti({ active, onDone }) {
 }
 
 // ─── Question Modal ──────────────────────────────────────────────────
-function QuestionModal({ question, onClose, onCorrect }) {
-  const [value, setValue] = useState("");
-  const [feedback, setFeedback] = useState(null); // "correct" | "wrong" | null
-  const inputRef = useRef(null);
+function QuestionModal({ question, onClose, onCorrect, onExhausted }) {
+  const [selectedChoice, setSelectedChoice] = useState("");
+  const [feedback, setFeedback] = useState(null); // "correct" | "retry" | "wrong-final" | null
+  const [attempt, setAttempt] = useState(1);
 
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+  const maxAttempts = 2;
 
   const handleSubmit = () => {
-    const trimmed = value.trim().toLowerCase();
-    const expected = question.answer.trim().toLowerCase();
-    if (trimmed === expected) {
+    if (!selectedChoice) return;
+    const isCorrect = selectedChoice.toLowerCase() === question.correctAnswer.toLowerCase();
+
+    if (isCorrect) {
       setFeedback("correct");
       setTimeout(() => onCorrect(), 600);
-    } else {
-      setFeedback("wrong");
-      setTimeout(() => setFeedback(null), 1200);
+      return;
     }
+
+    if (attempt < maxAttempts) {
+      setFeedback("retry");
+      setAttempt((prev) => prev + 1);
+      setTimeout(() => setFeedback(null), 1200);
+      return;
+    }
+
+    setFeedback("wrong-final");
+    setTimeout(() => onExhausted(), 1400);
   };
 
   return (
@@ -208,7 +235,7 @@ function QuestionModal({ question, onClose, onCorrect }) {
             marginBottom: 14,
           }}
         >
-          {question.id}
+          {question.displayNumber}
         </div>
 
         <h3
@@ -221,33 +248,37 @@ function QuestionModal({ question, onClose, onCorrect }) {
             lineHeight: 1.4,
           }}
         >
-          {question.question}
+          {question.prompt}
         </h3>
 
-        <input
-          ref={inputRef}
-          type="text"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && value.trim() && handleSubmit()}
-          placeholder="Type your answer..."
-          style={{
-            width: "100%",
-            padding: "10px 14px",
-            borderRadius: 6,
-            border: `2px solid ${feedback === "wrong" ? "#d44" : feedback === "correct" ? "#3a9e5c" : "#c8b99a"}`,
-            backgroundColor: "white",
-            fontSize: "1rem",
-            color: "#1a2744",
-            outline: "none",
-            boxSizing: "border-box",
-            transition: "border-color 0.2s",
-          }}
-        />
+        <div style={{ display: "grid", gap: 8 }}>
+          {question.choices.map((choice) => {
+            const isSelected = selectedChoice === choice.text;
+            return (
+              <button
+                key={choice.id}
+                onClick={() => setSelectedChoice(choice.text)}
+                style={{
+                  textAlign: "left",
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: 6,
+                  border: `2px solid ${isSelected ? "#AB0520" : "#c8b99a"}`,
+                  backgroundColor: isSelected ? "#fff4f1" : "white",
+                  color: "#1a2744",
+                  cursor: "pointer",
+                  fontSize: "0.95rem",
+                }}
+              >
+                {choice.text}
+              </button>
+            );
+          })}
+        </div>
 
-        {feedback === "wrong" && (
+        {feedback === "retry" && (
           <p style={{ color: "#d44", fontSize: "0.85rem", marginTop: 8, marginBottom: 0 }}>
-            Not quite — try again!
+            Not quite. Try one more time.
           </p>
         )}
         {feedback === "correct" && (
@@ -255,26 +286,36 @@ function QuestionModal({ question, onClose, onCorrect }) {
             That's right!
           </p>
         )}
+        {feedback === "wrong-final" && (
+          <p style={{ color: "#d44", fontSize: "0.85rem", marginTop: 8, marginBottom: 0 }}>
+            The correct answer is: <strong>{question.correctAnswer}</strong>
+          </p>
+        )}
 
         <button
           onClick={handleSubmit}
-          disabled={!value.trim() || feedback === "correct"}
+          disabled={!selectedChoice || feedback === "correct" || feedback === "wrong-final"}
           style={{
             marginTop: 16,
             width: "100%",
             padding: "10px 0",
             borderRadius: 6,
             border: "none",
-            backgroundColor: feedback === "correct" ? "#3a9e5c" : "#AB0520",
+            backgroundColor:
+              feedback === "correct" ? "#3a9e5c" : feedback === "wrong-final" ? "#a17f49" : "#AB0520",
             color: "white",
             fontWeight: 700,
             fontSize: "0.95rem",
-            cursor: !value.trim() || feedback === "correct" ? "default" : "pointer",
-            opacity: !value.trim() ? 0.5 : 1,
+            cursor: !selectedChoice || feedback === "correct" || feedback === "wrong-final" ? "default" : "pointer",
+            opacity: !selectedChoice ? 0.5 : 1,
             transition: "background-color 0.2s",
           }}
         >
-          {feedback === "correct" ? "Correct!" : "Submit"}
+          {feedback === "correct"
+            ? "Correct!"
+            : feedback === "wrong-final"
+              ? "Moving to next question..."
+              : "Submit"}
         </button>
       </div>
     </div>
@@ -286,9 +327,47 @@ export default function MemoryLane() {
   const navigate = useNavigate();
   const containerRef = useRef(null);
   const [containerWidth, setContainerWidth] = useState(800);
-  const [completed, setCompleted] = useState([]); // array of completed question ids
-  const [activeQ, setActiveQ] = useState(null); // question object or null
+  const [questions, setQuestions] = useState([]);
+  const [loadingQuestions, setLoadingQuestions] = useState(true);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [completed, setCompleted] = useState([]);
+  const [activeQ, setActiveQ] = useState(null);
+  const [scheduledRetryKeys, setScheduledRetryKeys] = useState([]);
   const [showConfetti, setShowConfetti] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadQuestionBank() {
+      setLoadingQuestions(true);
+      try {
+        // Prefer adaptive set personalized by past attempts.
+        let adaptiveRes = await apiFetch(`/api/questions/session/?mode=adaptive&count=${MIN_MEMORY_QUESTIONS}`);
+        let payload = adaptiveRes.ok ? await adaptiveRes.json() : [];
+
+        if (!Array.isArray(payload) || payload.length === 0) {
+          const allRes = await apiFetch(`/api/questions/`);
+          payload = allRes.ok ? await allRes.json() : [];
+        }
+
+        const normalized = (Array.isArray(payload) ? payload : [])
+          .filter((q) => q.question_text && (q.correct_answer || (Array.isArray(q.options) && q.options.length)))
+          .slice(0, Math.max(1, MIN_MEMORY_QUESTIONS))
+          .map((q, idx) => toLaneQuestion(q, idx));
+
+        if (mounted) setQuestions(normalized);
+      } catch {
+        if (mounted) setQuestions([]);
+      } finally {
+        if (mounted) setLoadingQuestions(false);
+      }
+    }
+
+    loadQuestionBank();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // Track container width for responsive path
   useEffect(() => {
@@ -304,22 +383,58 @@ export default function MemoryLane() {
     return () => ro.disconnect();
   }, []);
 
-  const currentStep = completed.length; // index of the next question to unlock
-  const positions = getNodePositions(QUESTIONS.length, containerWidth);
+  const positions = getNodePositions(questions.length, containerWidth);
   const pathD = buildPathD(positions);
 
   const handleNodeClick = (index) => {
-    if (index !== currentStep) return; // only the current unlocked node is clickable
-    setActiveQ(QUESTIONS[index]);
+    if (index !== currentStep || !questions[index]) return;
+    setActiveQ({
+      ...questions[index],
+      displayNumber: index + 1,
+    });
   };
 
   const handleCorrect = useCallback(() => {
+    if (!activeQ) return;
     setCompleted((prev) => [...prev, activeQ.id]);
+    setCurrentStep((prev) => prev + 1);
     setActiveQ(null);
     setShowConfetti(true);
   }, [activeQ]);
 
-  const svgHeight = 360;
+  const handleExhausted = useCallback(() => {
+    if (!activeQ) return;
+
+    const sourceKey = activeQ.sourceQuestionId || activeQ.id;
+    const hasRetryQueued = scheduledRetryKeys.includes(sourceKey);
+    const isRetryPrompt = Boolean(activeQ.isRetry);
+
+    if (!hasRetryQueued && !isRetryPrompt) {
+      if (typeof sourceKey === "number") {
+        apiFetch(`/api/questions/${sourceKey}/record_reprompt/`, {
+          method: "POST",
+          body: JSON.stringify({}),
+        }).catch(() => {});
+      }
+      setQuestions((prev) => [
+        ...prev,
+        {
+          ...activeQ,
+          id: `${sourceKey}-retry`,
+          sourceQuestionId: sourceKey,
+          isRetry: true,
+        },
+      ]);
+      setScheduledRetryKeys((prev) => [...prev, sourceKey]);
+    }
+
+    setCompleted((prev) => [...prev, activeQ.id]);
+    setCurrentStep((prev) => prev + 1);
+    setActiveQ(null);
+  }, [activeQ, scheduledRetryKeys]);
+
+  const totalRows = Math.max(1, Math.ceil(Math.max(questions.length, 1) / 6));
+  const svgHeight = 110 + totalRows * 120;
 
   return (
     <div style={{ maxWidth: 900, margin: "0 auto", position: "relative" }}>
@@ -355,8 +470,18 @@ export default function MemoryLane() {
         Memory Lane
       </h2>
       <p style={{ color: "#6a5a40", fontSize: "0.9rem", marginBottom: 20 }}>
-        Tap the next circle to answer a question about your life. Get it right to move forward!
+        Questions are randomized each session. If you miss one, you get one retry, and it will come back later.
       </p>
+      {loadingQuestions && (
+        <p style={{ color: "#6a5a40", fontSize: "0.9rem", marginBottom: 12 }}>
+          Preparing memory questions from your profile and diary entries...
+        </p>
+      )}
+      {!loadingQuestions && questions.length === 0 && (
+        <p style={{ color: "#AB0520", fontSize: "0.9rem", marginBottom: 12 }}>
+          We could not prepare questions yet. Add profile/diary details and try "Generate Questions" in Activities.
+        </p>
+      )}
 
       {/* Progress bar */}
       <div
@@ -371,7 +496,7 @@ export default function MemoryLane() {
         <div
           style={{
             height: "100%",
-            width: `${(completed.length / QUESTIONS.length) * 100}%`,
+            width: `${questions.length ? (completed.length / questions.length) * 100 : 0}%`,
             backgroundColor: "#AB0520",
             borderRadius: 3,
             transition: "width 0.5s ease",
@@ -417,7 +542,7 @@ export default function MemoryLane() {
 
           {/* Nodes */}
           {positions.map((pos, i) => {
-            const isCompleted = completed.includes(QUESTIONS[i].id);
+            const isCompleted = questions[i] && completed.includes(questions[i].id);
             const isCurrent = i === currentStep;
             const isLocked = i > currentStep;
             const nodeRadius = 22;
@@ -502,7 +627,7 @@ export default function MemoryLane() {
       </div>
 
       {/* Completion message */}
-      {completed.length === QUESTIONS.length && (
+      {questions.length > 0 && completed.length === questions.length && (
         <div
           style={{
             marginTop: 24,
@@ -528,6 +653,7 @@ export default function MemoryLane() {
           question={activeQ}
           onClose={() => setActiveQ(null)}
           onCorrect={handleCorrect}
+          onExhausted={handleExhausted}
         />
       )}
     </div>

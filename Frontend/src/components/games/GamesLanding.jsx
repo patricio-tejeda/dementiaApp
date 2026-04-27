@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { apiFetch } from "../../api";
 
 const games = [
   {
@@ -38,10 +40,56 @@ const games = [
     ),
     available: true,
   },
+  {
+    id: "memory-quiz",
+    title: "Practice Quiz",
+    desc: "Freely practice with all your memory questions. No pressure, no tracking — just exercise your memory at your own pace.",
+    route: "/games/memory-quiz",
+    icon: (
+      <svg viewBox="0 0 48 48" style={{ width: 48, height: 48 }} fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="24" cy="24" r="22" stroke="#AB0520" strokeWidth="2.5" fill="#f5f0e8" />
+        <text x="24" y="32" textAnchor="middle" fill="#1a2744" fontSize="24" fontFamily="Georgia, serif" fontWeight="bold">?</text>
+      </svg>
+    ),
+    available: true,
+  },
+  {
+    id: "adaptive-quiz",
+    title: "Daily Exercise",
+    desc: "A personalized quiz that adapts to you — questions you struggle with appear more often to help strengthen your memory.",
+    route: "/games/adaptive-quiz",
+    icon: (
+      <svg viewBox="0 0 48 48" style={{ width: 48, height: 48 }} fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="24" cy="24" r="22" stroke="#AB0520" strokeWidth="2.5" fill="#f5f0e8" />
+        <path d="M16 28 L22 22 L26 26 L32 18" stroke="#1a2744" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx="32" cy="18" r="2" fill="#AB0520" />
+      </svg>
+    ),
+    available: true,
+  },
 ];
 
 export default function GamesLanding() {
   const navigate = useNavigate();
+  const [generating, setGenerating] = useState(false);
+  const [genMessage, setGenMessage] = useState("");
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    setGenMessage("");
+    try {
+      const res = await apiFetch(`/api/questions/generate/`, {
+        method: "POST",
+        body: JSON.stringify({ desired_total: 18, rebuild_store: true }),
+      });
+      const data = await res.json();
+      setGenMessage(data.message || "Done!");
+    } catch (err) {
+      setGenMessage("Failed to generate questions.");
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   return (
     <div style={{ maxWidth: 720, margin: "0 auto", paddingTop: 12 }}>
@@ -121,6 +169,47 @@ export default function GamesLanding() {
             </p>
           </div>
         ))}
+      </div>
+
+      <div style={{
+        marginTop: 32,
+        padding: 20,
+        backgroundColor: "white",
+        borderRadius: 10,
+        border: "1px solid #d4c9b0",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <h3 style={{ fontFamily: "Georgia, serif", color: "#1a2744", fontSize: "1rem", fontWeight: 700, marginBottom: 4 }}>
+              Question Bank
+            </h3>
+            <p style={{ color: "#6a5a40", fontSize: "0.85rem", margin: 0 }}>
+              Generate new memory questions from your profile and diary entries.
+            </p>
+          </div>
+          <button
+            onClick={handleGenerate}
+            disabled={generating}
+            style={{
+              padding: "10px 24px",
+              backgroundColor: generating ? "#6a5a40" : "#AB0520",
+              color: "white",
+              border: "none",
+              borderRadius: 8,
+              fontWeight: 700,
+              fontSize: "0.85rem",
+              cursor: generating ? "not-allowed" : "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {generating ? "Generating..." : "Generate Questions"}
+          </button>
+        </div>
+        {genMessage && (
+          <p style={{ color: "#1a2744", fontSize: "0.85rem", marginTop: 12, marginBottom: 0 }}>
+            {genMessage}
+          </p>
+        )}
       </div>
     </div>
   );

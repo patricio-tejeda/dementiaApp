@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 
-export default function AuthModal({ onClose }) {
+export default function AuthModal({ onClose, dismissable = true }) {
   const { login } = useAuth();
   const [mode, setMode] = useState("signin"); // "signin" | "signup"
 
@@ -31,7 +31,7 @@ export default function AuthModal({ onClose }) {
     setError("");
     try {
       await login(signInData.username, signInData.password);
-      onClose();
+      if (onClose) onClose();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -52,8 +52,13 @@ export default function AuthModal({ onClose }) {
       });
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(JSON.stringify(data));
+        console.log("FULL BACKEND ERROR:", data);
+        throw new Error(data.detail || JSON.stringify(data));
       }
+      // if (!res.ok) {
+      //   const data = await res.json();
+      //   throw new Error(JSON.stringify(data));
+      // }
       setSuccess("Account created! You can now sign in.");
       setMode("signin");
     } catch (err) {
@@ -71,7 +76,9 @@ export default function AuthModal({ onClose }) {
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
-      onClick={(e) => e.target === e.currentTarget && onClose()}
+      onClick={(e) => {
+        if (dismissable && e.target === e.currentTarget && onClose) onClose();
+      }}
     >
       <div className="bg-[#f5f0e8] rounded-lg shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto mx-4">
         {/* Header */}
@@ -82,9 +89,11 @@ export default function AuthModal({ onClose }) {
             </h2>
             <p className="text-[#a0b0d0] text-xs mt-0.5">University of Arizona Dementia App</p>
           </div>
-          <button onClick={onClose} className="text-white hover:text-[#e8c0c0] text-2xl leading-none border-0 bg-transparent p-0">
-            ×
-          </button>
+          {dismissable && (
+            <button onClick={onClose} className="text-white hover:text-[#e8c0c0] text-2xl leading-none border-0 bg-transparent p-0">
+              ×
+            </button>
+          )}
         </div>
 
         {/* Tab switcher */}
