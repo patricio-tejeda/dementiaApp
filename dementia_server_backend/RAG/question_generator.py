@@ -5,6 +5,11 @@ from RAG.vector_database import VectorStore
 from RAG.diary_classifier import classify_diary_entry
 from RAG.groq_client import build_chat_groq
 
+def load_guidelines():
+    with open(os.path.join("RAG", "nacc_guidelines.json"), "r") as f:
+        return json.load(f)
+
+guidelines = load_guidelines()
 
 def _normalize(s: str) -> str:
     """Lowercase + strip punctuation + collapse whitespace for fuzzy matching."""
@@ -356,6 +361,23 @@ Existing questions to AVOID (do not repeat or rephrase):
 
 Patient Information (ONLY use facts stated here):
 {context}
+
+Memory Guidance (use this to shape question themes):
+
+Family Memory:
+{guidelines.get('family', '')}
+
+Childhood Memory:
+{guidelines.get('childhood', '')}
+
+Life Events:
+{guidelines.get('life_events', '')}
+
+Daily Life Memory:
+{guidelines.get('daily_memory', '')}
+
+Emotional Memory:
+{guidelines.get('emotional_memory', '')}
 
 Each JSON item must have:
 - "question": the question text
