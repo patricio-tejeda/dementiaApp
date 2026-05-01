@@ -326,6 +326,7 @@ def generate_questions_for_profile(profile, count=5):
         batches_run += 1
         batch_size = min(remaining, 5)
 
+        retry_list = []
         prompt = f"""You are creating memory exercise multiple-choice questions for a dementia patient.
 Write like a calm caregiver: warm, respectful, and supportive.
 Use short, clear, everyday language. Avoid harsh test-like wording.
@@ -343,10 +344,28 @@ CRITICAL RULES:
 5. NEVER ask about dates, times, or "when" something happened.
 6. Every question must be about a DIFFERENT topic than the existing questions listed below. Do not rephrase them.
 7. Respond with ONLY a JSON array. No prose, no markdown.
+
+STRICT JSON REQUIREMENTS:
+- Output must be valid JSON that can be parsed by Python json.loads()
+- All keys MUST use double quotes
+- All string values MUST use double quotes
+- Do NOT output unquoted text
+- Do NOT include trailing commas
+- Do NOT include markdown (no ``` blocks)
+- If unsure, return []
 8. Caregiver tone requirements for each question:
    - Keep wording gentle and encouraging.
    - Do NOT use negative/judgmental phrasing.
    - Keep each question to one sentence.
+9. RETRY LOGIC (VERY IMPORTANT):
+   - If a topic appears in the Existing Questions list, you MAY generate a follow-up question ONLY IF it is clearly a retry for a previously missed question.
+   - A retry question must:
+       * Ask about the SAME underlying fact (same correct answer),
+       * Use DIFFERENT wording (not just minor rephrasing),
+       * Sound natural and supportive, like helping the patient try again.
+   - Do NOT repeat the exact same wording.
+   - Do NOT create multiple retries for the same question in this batch.
+   - If you are unsure, choose a completely new topic instead.
 
 BAD examples (never create these):
 - Question: "What color is your favorite sports team?" — team not in patient info, HALLUCINATED.
@@ -361,6 +380,9 @@ GOOD examples:
 
 Existing questions to AVOID (do not repeat or rephrase):
 {existing_list}
+
+Retry Questions (only rephrase if listed here):
+{retry_list}
 
 Patient Information (ONLY use facts stated here):
 {context}
@@ -402,7 +424,7 @@ Generate {batch_size} NEW questions grounded strictly in the Patient Information
 # ================================================
 
         if raw.startswith("```"):
-            raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+            raw = raw.replace("```json", "").replace("```", "").strip()
         if raw.endswith("```"):
             raw = raw[:-3]
         raw = raw.strip()

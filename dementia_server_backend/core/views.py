@@ -336,9 +336,18 @@ class GeneratedQuestionView(viewsets.ModelViewSet):
             question.last_reprompted_at = timezone.now()
             question.save()
 
+            retry_list.append({
+                "question": question.question_text,
+                "correct_answer": question.correct_answer,
+                "category": question.category
+            })
+        else:
+            retry_payload = None
+
         return Response({
             "correct": is_correct,
-            "correct_answer": question.correct_answer
+            "correct_answer": question.correct_answer,
+            "retry": retry_list
         })
 
 # ------------------------------------------------------------------
