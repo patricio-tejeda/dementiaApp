@@ -158,7 +158,15 @@ function QuestionModal({ question, onClose, onCorrect, onExhausted }) {
   const [feedback, setFeedback] = useState(null); // "correct" | "retry" | "wrong-final" | null
   const [attempt, setAttempt] = useState(1);
 
-  useAutoSpeak(question?.prompt, speechEnabled, autoSpeak);
+  const speechText = question
+    ? `${question.prompt}. The choices are: ${
+      question.choices
+        .map((c, i) => `${i + 1}, ${c.text}`)
+        .join(". ")
+      }`
+    : null;
+
+useAutoSpeak(speechText, speechEnabled, autoSpeak);
 
   const maxAttempts = 2;
 
@@ -258,7 +266,7 @@ function QuestionModal({ question, onClose, onCorrect, onExhausted }) {
         </h3>
 
         <button
-          onClick={() => speakText(question?.prompt)}
+          onClick={() => speakText(speechText)}
           style={{
             marginBottom: 12,
             padding: "6px 10px",

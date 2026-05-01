@@ -7,7 +7,7 @@ export const speakText = (text) => {
   const utterance = new SpeechSynthesisUtterance(text);
 
   // Dementia-friendly settings
-  utterance.rate = 0.9;
+  utterance.rate = 0.8;
   utterance.pitch = 1;
   utterance.lang = "en-US";
 
