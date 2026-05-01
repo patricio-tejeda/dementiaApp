@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { apiFetch } from "../../api";
+import { useAutoSpeak } from "../../utils/useAutoSpeak";
+import { speakText } from "../../utils/speech";
 
 export default function AdaptiveQuiz() {
   const { profile } = useAuth();
@@ -13,12 +15,16 @@ export default function AdaptiveQuiz() {
   const [finished, setFinished] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [speechEnabled, setSpeechEnabled] = useState(true);
+  const [autoSpeak, setAutoSpeak] = useState(false);
 
   const [freeRecallText, setFreeRecallText] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const navigate = useNavigate();
   const questionCount = 8;
+
+  useAutoSpeak(q?.question_text, speechEnabled, autoSpeak);
 
   const fetchAdaptive = async () => {
     if (!profile) return;
@@ -137,6 +143,17 @@ export default function AdaptiveQuiz() {
           <h2 className="text-3xl font-bold mb-4" style={{ color: "#1a2744", fontFamily: "Georgia, serif" }}>
             Daily Exercise Complete!
           </h2>
+          <button
+            onClick={() => speakText(q?.question_text)}
+            className="mb-4 px-4 py-2 rounded-xl border-2"
+            style={{
+              borderColor: "#1a2744",
+              color: "#1a2744",
+              backgroundColor: "white"
+            }}
+          >
+            🔊 Repeat Question
+          </button>
           <p className="text-xl mb-2" style={{ color: "#1a2744" }}>
             You scored <strong>{score}</strong> out of <strong>{questions.length}</strong>
           </p>
