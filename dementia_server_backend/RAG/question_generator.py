@@ -6,7 +6,10 @@ from RAG.diary_classifier import classify_diary_entry
 from RAG.groq_client import build_chat_groq
 
 def load_guidelines():
-    with open(os.path.join("RAG", "nacc_guidelines.json"), "r") as f:
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(base_dir, "nacc_guidelines.json")
+
+    with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 guidelines = load_guidelines()
@@ -389,6 +392,14 @@ Generate {batch_size} NEW questions grounded strictly in the Patient Information
 
         response = llm.invoke(prompt)
         raw = response.content.strip()
+
+# ================= DEBUG OUTPUT =================
+        print("\n[DEBUG] Batch size:", batch_size)
+        print("[DEBUG] Remaining questions:", remaining)
+        print("\n================ RAW LLM OUTPUT ================\n")
+        print(raw[:2000])
+        print("\n================================================\n")
+# ================================================
 
         if raw.startswith("```"):
             raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
