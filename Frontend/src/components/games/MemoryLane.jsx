@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../../api";
+import { useAutoSpeak } from "../../utils/useAutoSpeak";
+import { speakText } from "../../utils/speech";
 
 function getNodePositions(count, containerWidth) {
   const cols = 6;
@@ -150,9 +152,21 @@ function Confetti({ active, onDone }) {
 
 // ─── Question Modal ──────────────────────────────────────────────────
 function QuestionModal({ question, onClose, onCorrect, onExhausted }) {
+  const [speechEnabled, setSpeechEnabled] = useState(true);
+  const [autoSpeak, setAutoSpeak] = useState(false);
   const [selectedChoice, setSelectedChoice] = useState("");
   const [feedback, setFeedback] = useState(null); // "correct" | "retry" | "wrong-final" | null
   const [attempt, setAttempt] = useState(1);
+
+  const speechText = question
+    ? `${question.prompt}. The choices are: ${
+      question.choices
+        .map((c, i) => `${i + 1}, ${c.text}`)
+        .join(". ")
+      }`
+    : null;
+
+useAutoSpeak(speechText, speechEnabled, autoSpeak);
 
   const maxAttempts = 2;
 
@@ -250,6 +264,32 @@ function QuestionModal({ question, onClose, onCorrect, onExhausted }) {
         >
           {question.prompt}
         </h3>
+
+        <button
+          onClick={() => speakText(speechText)}
+          style={{
+            marginBottom: 12,
+            padding: "6px 10px",
+            borderRadius: 6,
+            border: "1px solid #1a2744",
+            backgroundColor: "white",
+            color: "#1a2744",
+            cursor: "pointer",
+            fontSize: "0.8rem"
+        }}
+      >
+        🔊 Repeat
+      </button>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        <button onClick={() => setSpeechEnabled(!speechEnabled)}>
+          Speech: {speechEnabled ? "On" : "Off"}
+        </button>
+
+        <button onClick={() => setAutoSpeak(!autoSpeak)} disabled={!speechEnabled}>
+          Auto: {autoSpeak ? "On" : "Off"}
+        </button>
+      </div>
 
         <div style={{ display: "grid", gap: 8 }}>
           {question.choices.map((choice) => {

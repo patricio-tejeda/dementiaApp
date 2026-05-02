@@ -317,6 +317,38 @@ class GeneratedQuestionView(viewsets.ModelViewSet):
             "last_reprompted_at": question.last_reprompted_at,
         }, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=['post'])
+    def submit_answer(self, request, pk=None):
+        question = self.get_object()
+        user_answer = request.data.get("answer")
+
+        is_correct = (user_answer == question.correct_answer)
+
+        QuestionAttempt.objects.create(
+            question=question,
+            user=request.user,
+            answer=user_answer,
+            is_correct=is_correct
+        )
+
+        if not is_correct:
+            question.reprompt_count += 1
+            question.last_reprompted_at = timezone.now()
+            question.save()
+
+            retry_list.append({
+                "question": question.question_text,
+                "correct_answer": question.correct_answer,
+                "category": question.category
+            })
+        else:
+            retry_payload = None
+
+        return Response({
+            "correct": is_correct,
+            "correct_answer": question.correct_answer,
+            "retry": retry_list
+        })
 
 # ------------------------------------------------------------------
 # Attempts

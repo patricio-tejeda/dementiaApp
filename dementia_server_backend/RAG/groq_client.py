@@ -19,6 +19,10 @@ def _load_project_env() -> None:
     load_dotenv(PROJECT_ROOT / ".env")
     load_dotenv()
 
+    # DEBUG (temporary)
+    print("ENV FILE LOADED FROM:", BACKEND_DIR / ".env")
+    print("GROQ KEY EXISTS:", bool(os.getenv("GROQ_API_KEY")))
+
 
 def get_groq_api_key() -> str:
     _load_project_env()
