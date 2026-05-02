@@ -173,12 +173,13 @@ function VoicelineControls({ field, onChange }) {
 }
 
 // ─── Main shared page ──────────────────────────────────────────────
-export default function InfoCategoryPage({ category, title, subtitle, addPlaceholder }) {
+export default function InfoCategoryPage({ category, title, subtitle, addPlaceholder, allowAIGenerate = true }) {
   const { profile, refreshProfile } = useAuth();
 
   const [fields, setFields] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [errors, setErrors] = useState({});
   const [savedFlash, setSavedFlash] = useState(false);
 
@@ -278,8 +279,58 @@ export default function InfoCategoryPage({ category, title, subtitle, addPlaceho
     }
   };
 
-  const handleDeleteCustom = async (field) => {
-    if (!field.id) return;
+  const addAIFields = async () => {
+    if (!profile?.id || generating) return;
+
+    setGenerating(true);
+    try {
+      const res = await apiFetch(`/api/profiles/${profile.id}/generate_followups/`, {
+        method: "POST",
+        body: JSON.stringify({
+          count: 5,
+          avoid_titles: fields.map((field) => field.title).filter(Boolean),
+        }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || "Failed to generate profile questions.");
+      }
+
+      const data = await res.json();
+      const suggestions = Array.isArray(data.questions) ? data.questions : [];
+      if (suggestions.length === 0) {
+        alert("No new profile questions were suggested right now. Try again after adding a bit more information.");
+        return;
+      }
+
+      setFields((prev) => {
+        const existingTitles = new Set(prev.map((field) => (field.title || "").trim().toLowerCase()));
+        const toAdd = suggestions
+          .filter((title) => title && !existingTitles.has(title.trim().toLowerCase()))
+          .map((title, idx) => ({
+            title: title.trim(),
+            answer: "",
+            category,
+            required: false,
+            is_custom: false,
+            is_generated: true,
+            order: prev.length + idx + 1,
+          }));
+        return [...prev, ...toAdd];
+      });
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleDeleteField = async (field, index) => {
+    if (!field.id) {
+      setFields((prev) => prev.filter((_, i) => i !== index));
+      return;
+    }
     if (!window.confirm(`Delete "${field.title}"?`)) return;
     try {
       const res = await apiFetch(`/api/fields/${field.id}/`, { method: "DELETE" });
@@ -334,9 +385,9 @@ export default function InfoCategoryPage({ category, title, subtitle, addPlaceho
                   {field.required && <span style={{ color: "#AB0520" }} className="ml-1">*</span>}
                 </label>
 
-                {field.is_custom && (
+                {(field.is_custom || field.is_generated) && (
                   <button
-                    onClick={() => handleDeleteCustom(field)}
+                    onClick={() => handleDeleteField(field, index)}
                     className="text-gray-300 hover:text-red-400 transition-colors text-lg leading-none"
                     title="Delete this field"
                     style={{ background: "transparent", border: "none", cursor: "pointer" }}
@@ -421,6 +472,16 @@ export default function InfoCategoryPage({ category, title, subtitle, addPlaceho
             className="mt-4 w-full py-3 border-2 border-dashed border-gray-300 rounded-xl text-gray-400 hover:border-[#1a2744] hover:text-[#1a2744] transition-colors text-sm"
           >
             + Add a new question
+          </button>
+        )}
+
+        {allowAIGenerate && (
+          <button
+            onClick={addAIFields}
+            disabled={generating}
+            className="mt-4 w-full py-3 border-2 border-dashed border-gray-300 rounded-xl text-gray-400 hover:border-[#1a2744] hover:text-[#1a2744] transition-colors text-sm disabled:opacity-50"
+          >
+            {generating ? "Generating questions..." : "+ Generate more questions with AI"}
           </button>
         )}
 

@@ -34,7 +34,7 @@ def process_all_sql(sql_directory: str) -> List[Any]:
 
                     if table == "core_inputinfopage":
                         query = """
-                            SELECT title, answer
+                            SELECT title, answer, profile_id
                             FROM core_inputinfopage
                             WHERE answer IS NOT NULL AND answer != ''
                         """
@@ -45,6 +45,7 @@ def process_all_sql(sql_directory: str) -> List[Any]:
                         for row in rows:
                             question = row[0]
                             answer = row[1]
+                            profile_id = row[2]
                             if not answer or not answer.strip():
                                 continue
                             doc = Document(
@@ -53,13 +54,14 @@ def process_all_sql(sql_directory: str) -> List[Any]:
                                     "source_file": sql_file.name,
                                     "table": table,
                                     "type": "patient_memory",
+                                    "profile_id": profile_id,
                                 }
                             )
                             all_documents.append(doc)
 
                     elif table == "core_diaryentry":
                         query = """
-                            SELECT date, text
+                            SELECT date, text, profile_id
                             FROM core_diaryentry
                             WHERE text IS NOT NULL AND text != ''
                             ORDER BY date DESC
@@ -71,6 +73,7 @@ def process_all_sql(sql_directory: str) -> List[Any]:
                         for row in rows:
                             date = row[0]
                             entry_text = row[1]
+                            profile_id = row[2]
                             if not entry_text or not entry_text.strip():
                                 continue
                             doc = Document(
@@ -80,6 +83,7 @@ def process_all_sql(sql_directory: str) -> List[Any]:
                                     "table": table,
                                     "type": "diary_entry",
                                     "date": str(date),
+                                    "profile_id": profile_id,
                                 }
                             )
                             all_documents.append(doc)

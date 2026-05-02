@@ -135,26 +135,15 @@ def _evaluate_caregiver_tone(question: str) -> tuple[int, str]:
 
 
 def _build_context(profile, store: VectorStore | None = None) -> str:
-    if store is None:
-        store = VectorStore("faiss_store")
-        store.load()
-
     from core.models import DiaryEntry
 
-    queries = [
-        "patient personal information name birthday hometown",
-        "patient family mother father siblings spouse children",
-        "patient education school college degree occupation",
-        "patient favorite things preferences colors food hobbies",
-    ]
-
     all_context = []
-    for q in queries:
-        results = store.query(q, top_k=3)
-        for r in results:
-            text = r["metadata"].get("text", "") if r["metadata"] else ""
-            if text and text not in all_context:
-                all_context.append(text)
+
+    profile_fields = profile.fields.exclude(answer__exact="").exclude(answer__isnull=True).order_by("category", "order", "id")
+    for field in profile_fields:
+        all_context.append(
+            f"Patient Fact:\nCategory: {field.get_category_display()}\nQuestion: {field.title}\nAnswer: {field.answer}"
+        )
 
     diary_entries = DiaryEntry.objects.filter(profile=profile, quality="rich")
     for entry in diary_entries:
@@ -165,6 +154,23 @@ def _build_context(profile, store: VectorStore | None = None) -> str:
             enriched = f"Diary follow-up: {entry.enrichment}"
             if enriched not in all_context:
                 all_context.append(enriched)
+
+    if store is None:
+        return "\n\n".join(all_context)
+
+    queries = [
+        "patient personal information name birthday hometown",
+        "patient family mother father siblings spouse children",
+        "patient education school college degree occupation",
+        "patient favorite things preferences colors food hobbies",
+    ]
+
+    for q in queries:
+        results = store.query(q, top_k=3, metadata_filter={"profile_id": profile.id})
+        for r in results:
+            text = r["metadata"].get("text", "") if r["metadata"] else ""
+            if text and text not in all_context:
+                all_context.append(text)
 
     return "\n\n".join(all_context)
 
@@ -177,8 +183,12 @@ def reword_question_for_retry(profile, question, wrong_answers: list[str] | None
     wrong_answers = [a for a in (wrong_answers or []) if a]
 
     try:
-        store = VectorStore("faiss_store")
-        store.load()
+        store = None
+        try:
+            store = VectorStore("faiss_store")
+            store.load()
+        except Exception as exc:
+            print(f"[WARN] Falling back to database-only retry context: {exc}")
         context = _build_context(profile, store=store)
         llm = build_chat_groq("llama-3.3-70b-versatile")
     except Exception as exc:
@@ -227,8 +237,12 @@ Common incorrect answers chosen before:
 def generate_questions_for_profile(profile, count=5):
     """Generate structured MCQ + free-recall questions from profile + diary data."""
 
-    store = VectorStore("faiss_store")
-    store.load()
+    store = None
+    try:
+        store = VectorStore("faiss_store")
+        store.load()
+    except Exception as exc:
+        print(f"[WARN] Falling back to database-only question context: {exc}")
 
     llm = build_chat_groq("llama-3.3-70b-versatile")
 
@@ -337,10 +351,11 @@ CRITICAL RULES:
 1. NEVER invent a topic that is not in the Patient Information. If the patient's favorite sports team is not listed, do NOT ask about it. Only ask about facts that are explicitly stated.
 2. The "correct_answer" must appear EXACTLY in the Patient Information (same spelling). Copy it verbatim.
 3. The "correct_answer" must be copied EXACTLY into one of the "options" — same spelling, same capitalization.
-4. All 4 options must be:
-   - The SAME TYPE of thing (4 specific school names, or 4 specific colors, or 4 specific cities).
+4. The "options" array must contain 4 to 8 choices:
+   - The SAME TYPE of thing (all person names, all specific school names, all colors, all cities, etc.).
    - DISTINCT — no two options may refer to the same thing. "UofA" and "University of Arizona" are the same answer. "High School" and "Middle School" are generic categories, NOT school names.
    - Plausible — real examples of that category, not placeholder words.
+   - Prefer 6 choices when possible so games can vary distractors each time the question appears.
 5. NEVER ask about dates, times, or "when" something happened.
 6. Every question must be about a DIFFERENT topic than the existing questions listed below. Do not rephrase them.
 7. Respond with ONLY a JSON array. No prose, no markdown.
@@ -406,7 +421,7 @@ Emotional Memory:
 
 Each JSON item must have:
 - "question": the question text
-- "options": array of exactly 4 DISTINCT choices of the same type
+- "options": array of 4 to 8 DISTINCT choices of the same type
 - "correct_answer": exact copy of one option, which must also appear in the Patient Information
 - "category": one of "personal", "family", "education", "diary"
 
@@ -442,8 +457,8 @@ Generate {batch_size} NEW questions grounded strictly in the Patient Information
                 print(f"[WARN] Skipping — missing keys: {q}")
                 continue
 
-            if not isinstance(q["options"], list) or len(q["options"]) != 4:
-                print(f"[WARN] Skipping — options not a list of 4: {q.get('question', '?')}")
+            if not isinstance(q["options"], list) or not 4 <= len(q["options"]) <= 8:
+                print(f"[WARN] Skipping — options not a list of 4 to 8: {q.get('question', '?')}")
                 continue
 
             if q["correct_answer"] not in q["options"]:

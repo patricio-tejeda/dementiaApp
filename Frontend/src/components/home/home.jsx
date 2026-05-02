@@ -1,13 +1,15 @@
 import { useAuth } from "../../context/AuthContext";
+import { getPatientName } from "../../utils/patientName";
 
 function Home() {
-  const { isLoggedIn, user } = useAuth();
+  const { isLoggedIn, user, profile } = useAuth();
+  const patientName = getPatientName(profile, user);
 
   return (
     <div className="max-w-3xl mt-6">
       {isLoggedIn && (
         <p className="mb-6 text-sm" style={{ color: "#AB0520", fontFamily: "Georgia, serif" }}>
-          Welcome back, <strong>{user?.full_name || user?.username}</strong>.
+          Welcome back, <strong>{patientName || "there"}</strong>.
         </p>
       )}
 

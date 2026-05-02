@@ -29,7 +29,11 @@ class VectorStore:
         embed_pipeline = EmbeddingPipeline(model_name=self.embedding_model, chunk_size=self.chunk_size, chunk_overlap=self.chunk_overlap)
         # chunks = embed_pipeline.chunk_documents(documents)
         chunks, embeddings = embed_pipeline.embed_docs(documents)
-        metadatas = [{"text": chunk.page_content} for chunk in chunks]
+        metadatas = []
+        for chunk in chunks:
+            metadata = dict(getattr(chunk, "metadata", {}) or {})
+            metadata["text"] = chunk.page_content
+            metadatas.append(metadata)
         self.add_embeddings(np.array(embeddings).astype("float32"), metadatas)
         self.save()
         print(f"[INFO] Vector store built and saved to {self.persist_dir}")
@@ -67,15 +71,27 @@ class VectorStore:
             results.append({"index": idx, "distance": dist, "metadata": meta})
         return results
     
-    def query(self, query_text: str, top_k: int = 5):
+    def query(self, query_text: str, top_k: int = 5, metadata_filter: Dict[str, Any] | None = None):
         query_embedding = self.model.encode([query_text]).astype("float32")
-        D, I = self.index.search(query_embedding, top_k)
+        search_k = top_k
+        if metadata_filter:
+            search_k = min(max(top_k * 10, top_k), self.index.ntotal)
+        D, I = self.index.search(query_embedding, search_k)
         results = []
         for idx, dist in zip(I[0], D[0]):
+            if idx < 0:
+                continue
             meta = self.metadata[idx] if idx < len(self.metadata) else None
+            if metadata_filter:
+                if not meta:
+                    continue
+                if any(meta.get(key) != value for key, value in metadata_filter.items()):
+                    continue
             results.append({
             "index": int(idx),
             "distance": float(dist),
             "metadata": meta
             })
+            if len(results) >= top_k:
+                break
         return results

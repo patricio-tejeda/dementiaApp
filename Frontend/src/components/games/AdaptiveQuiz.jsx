@@ -23,6 +23,8 @@ export default function AdaptiveQuiz() {
 
   const navigate = useNavigate();
   const questionCount = 8;
+  const q = questions[current];
+  const isFreeRecall = q?.question_type === "free_recall";
 
   useAutoSpeak(q?.question_text, speechEnabled, autoSpeak);
 
@@ -53,9 +55,6 @@ export default function AdaptiveQuiz() {
     fetchAdaptive();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id]);
-
-  const q = questions[current];
-  const isFreeRecall = q?.question_type === "free_recall";
 
   const handleSelect = async (option) => {
     if (showResult) return;

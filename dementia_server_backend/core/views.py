@@ -92,9 +92,16 @@ class PatientProfileView(viewsets.ModelViewSet):
         profile = self.get_object()
         count = int(request.data.get("count", 5))
         count = max(1, min(count, 10))
+        avoid_titles = request.data.get("avoid_titles") or []
+        if not isinstance(avoid_titles, list):
+            avoid_titles = []
 
         try:
-            questions = generate_profile_followup_questions(profile, count=count)
+            questions = generate_profile_followup_questions(
+                profile,
+                count=count,
+                avoid_titles=avoid_titles,
+            )
         except MissingGroqAPIKeyError as exc:
             return Response(
                 {"error": str(exc)},

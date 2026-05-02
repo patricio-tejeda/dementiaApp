@@ -88,7 +88,10 @@ export default function PatientProfileSetup() {
     try {
       const res = await apiFetch(`/api/profiles/${profile.id}/generate_followups/`, {
         method: "POST",
-        body: JSON.stringify({ count: 5 }),
+        body: JSON.stringify({
+          count: 8,
+          avoid_titles: fields.map((field) => field.title).filter(Boolean),
+        }),
       });
 
       if (!res.ok) {

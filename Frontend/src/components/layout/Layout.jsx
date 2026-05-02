@@ -2,6 +2,7 @@ import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import AuthModal from "../auth/AuthModal";
+import { getPatientName } from "../../utils/patientName";
 
 const navPages = [
   { id: "home", title: "HOME", route: "/" },
@@ -12,9 +13,10 @@ const navPages = [
 ];
 
 export default function Layout({ children }) {
-  const { user, isLoggedIn, logout } = useAuth();
+  const { user, profile, isLoggedIn, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
+  const patientName = getPatientName(profile, user);
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", backgroundColor: "#f5f0e8" }}>
@@ -118,7 +120,7 @@ export default function Layout({ children }) {
                     onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#8a0418"}
                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
                   >
-                    Sign Out ({user?.username})
+                    Sign Out ({patientName || "Patient"})
                   </button>
                 ) : (
                   <button

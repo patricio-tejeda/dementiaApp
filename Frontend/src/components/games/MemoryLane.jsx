@@ -84,6 +84,16 @@ function toLaneQuestion(question, index) {
   };
 }
 
+function completedIndicesForPath(questions, completedIds, currentStep) {
+  const completedSet = new Set(completedIds);
+  const indices = [];
+  for (let index = 0; index < questions.length && index < currentStep; index += 1) {
+    if (!completedSet.has(questions[index].id)) break;
+    indices.push(index);
+  }
+  return indices;
+}
+
 // ─── Confetti ────────────────────────────────────────────────────────
 function Confetti({ active, onDone }) {
   const canvasRef = useRef(null);
@@ -157,6 +167,7 @@ function QuestionModal({ question, onClose, onCorrect, onExhausted }) {
   const [selectedChoice, setSelectedChoice] = useState("");
   const [feedback, setFeedback] = useState(null); // "correct" | "retry" | "wrong-final" | null
   const [attempt, setAttempt] = useState(1);
+  const resolvedRef = useRef(false);
 
   const speechText = question
     ? `${question.prompt}. The choices are: ${
@@ -171,10 +182,11 @@ useAutoSpeak(speechText, speechEnabled, autoSpeak);
   const maxAttempts = 2;
 
   const handleSubmit = () => {
-    if (!selectedChoice) return;
+    if (!selectedChoice || resolvedRef.current) return;
     const isCorrect = selectedChoice.toLowerCase() === question.correctAnswer.toLowerCase();
 
     if (isCorrect) {
+      resolvedRef.current = true;
       setFeedback("correct");
       setTimeout(() => onCorrect(), 600);
       return;
@@ -188,6 +200,7 @@ useAutoSpeak(speechText, speechEnabled, autoSpeak);
     }
 
     setFeedback("wrong-final");
+    resolvedRef.current = true;
     setTimeout(() => onExhausted(), 1400);
   };
 
@@ -425,6 +438,8 @@ export default function MemoryLane() {
 
   const positions = getNodePositions(questions.length, containerWidth);
   const pathD = buildPathD(positions);
+  const completedPathIndices = completedIndicesForPath(questions, completed, currentStep);
+  const completedPathPositions = positions.filter((_, index) => completedPathIndices.includes(index));
 
   const handleNodeClick = (index) => {
     if (index !== currentStep || !questions[index]) return;
@@ -436,8 +451,8 @@ export default function MemoryLane() {
 
   const handleCorrect = useCallback(() => {
     if (!activeQ) return;
-    setCompleted((prev) => [...prev, activeQ.id]);
-    setCurrentStep((prev) => prev + 1);
+    setCompleted((prev) => (prev.includes(activeQ.id) ? prev : [...prev, activeQ.id]));
+    setCurrentStep((prev) => Math.max(prev, activeQ.displayNumber));
     setActiveQ(null);
     setShowConfetti(true);
   }, [activeQ]);
@@ -468,8 +483,8 @@ export default function MemoryLane() {
       setScheduledRetryKeys((prev) => [...prev, sourceKey]);
     }
 
-    setCompleted((prev) => [...prev, activeQ.id]);
-    setCurrentStep((prev) => prev + 1);
+    setCompleted((prev) => (prev.includes(activeQ.id) ? prev : [...prev, activeQ.id]));
+    setCurrentStep((prev) => Math.max(prev, activeQ.displayNumber));
     setActiveQ(null);
   }, [activeQ, scheduledRetryKeys]);
 
@@ -569,9 +584,9 @@ export default function MemoryLane() {
           <path d={pathD} fill="none" stroke="#d4c9b0" strokeWidth="3" strokeLinecap="round" />
 
           {/* Completed portion of path */}
-          {completed.length > 0 && (
+          {completedPathPositions.length > 1 && (
             <path
-              d={buildPathD(positions.slice(0, completed.length + 1))}
+              d={buildPathD(completedPathPositions)}
               fill="none"
               stroke="#AB0520"
               strokeWidth="3"

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { apiFetch } from "../../api";
+import { getPatientFirstName } from "../../utils/patientName";
 
 // ─── Hardcoded fallback prompts ──────────────────────────────────────
 // These always exist as a baseline. LLM-generated prompts get mixed in.
@@ -30,7 +31,7 @@ function shuffle(arr) {
 
 // ─── Main Component ──────────────────────────────────────────────────
 export default function WellnessPage() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [llmPrompts, setLlmPrompts] = useState([]);
   const [loadingLlm, setLoadingLlm] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -95,9 +96,8 @@ export default function WellnessPage() {
   }
 
   const prompt = allPrompts[currentIndex];
-  const greeting = user?.full_name
-    ? `Hi, ${user.full_name.split(" ")[0]}.`
-    : "Hi there.";
+  const firstName = getPatientFirstName(profile, user);
+  const greeting = firstName ? `Hi, ${firstName}.` : "Hi there.";
 
   return (
     <div style={{ maxWidth: 720, margin: "0 auto", paddingTop: 12 }}>

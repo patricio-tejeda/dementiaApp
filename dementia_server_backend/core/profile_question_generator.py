@@ -71,6 +71,22 @@ def _extract_questions_from_text(raw: str) -> list[str]:
     return fallback
 
 
+def _is_near_duplicate(question: str, existing_normalized: set[str]) -> bool:
+    normalized = _normalize(question)
+    tokens = set(normalized.split())
+    if normalized in existing_normalized:
+        return True
+    for existing in existing_normalized:
+        existing_tokens = set(existing.split())
+        if not tokens or not existing_tokens:
+            continue
+        overlap = len(tokens & existing_tokens)
+        smaller = min(len(tokens), len(existing_tokens))
+        if smaller and overlap / smaller >= 0.7:
+            return True
+    return False
+
+
 def _sanitize_questions(questions: list[str], existing_titles: list[str], count: int) -> list[str]:
     existing = {_normalize(title) for title in existing_titles if title}
     cleaned = []
@@ -86,7 +102,7 @@ def _sanitize_questions(questions: list[str], existing_titles: list[str], count:
         normalized = _normalize(text)
         if len(normalized) < 8:
             continue
-        if normalized in existing or normalized in seen:
+        if _is_near_duplicate(text, existing | seen):
             continue
         seen.add(normalized)
         cleaned.append(text)
@@ -96,14 +112,17 @@ def _sanitize_questions(questions: list[str], existing_titles: list[str], count:
     return cleaned
 
 
-def generate_profile_followup_questions(profile, count: int = 5) -> list[str]:
+def generate_profile_followup_questions(profile, count: int = 5, avoid_titles: list[str] | None = None) -> list[str]:
     llm = build_chat_groq("llama-3.3-70b-versatile")
 
     existing_titles = list(
         profile.fields.all().order_by("order", "id").values_list("title", flat=True)
     )
+    existing_titles.extend(avoid_titles or [])
     context = _profile_summary(profile)
     areas = "\n".join(f"- {area}" for area in IMPORTANT_MEMORY_AREAS)
+    count = max(1, min(count, 12))
+    generation_count = max(count * 3, count + 8)
 
     prompt = f"""You are helping build a dementia-friendly patient memory profile.
 Generate additional profile questions that would help caregivers and memory games understand
@@ -114,6 +133,12 @@ Your job:
 - Base them on important memory-support topics, not random trivia.
 - Prefer missing information or areas that would improve orientation, comfort, identity, and family connection.
 - Avoid duplicates or near-duplicates of existing profile questions.
+- Avoid asking several versions of the same topic in one response.
+- Cover a broad range of topics across family, places, work, routines, preferences, traditions, and comforting memories.
+- You may ask a natural follow-up to a known answer when it adds useful detail.
+  Example: if the profile says the patient has one sibling, ask whether it was a sister or brother;
+  after that, ask the sibling's name or a favorite memory with them.
+- Create the questions yourself. Do not copy the examples verbatim.
 - Keep each question short, concrete, and compassionate.
 - Questions should be suitable for a caregiver filling in a patient profile.
 - Return ONLY a JSON array of strings.
@@ -127,19 +152,20 @@ Current patient profile:
 Existing profile question titles to avoid repeating:
 {json.dumps(existing_titles, ensure_ascii=True)}
 
-Generate {count} new profile questions.
+Generate {generation_count} distinct profile questions so the app can keep the best {count}.
 """
 
     response = llm.invoke(prompt)
     raw = response.content.strip()
-    questions = _sanitize_questions(_extract_questions_from_text(raw), existing_titles, count)
+    llm_questions = _extract_questions_from_text(raw)
+    questions = _sanitize_questions(llm_questions, existing_titles, count)
     if questions:
         return questions
 
     retry_prompt = f"""You are helping a caregiver complete a dementia memory profile.
 The first attempt returned no usable new questions.
 
-Generate {count} short, useful follow-up profile questions that cover missing or underexplored
+Generate {generation_count} short, useful follow-up profile questions that cover missing or underexplored
 memory-support topics for this person. Focus on identity, orientation, loved ones, comforting routines,
 important places, favorite activities, music, traditions, and meaningful memories.
 
