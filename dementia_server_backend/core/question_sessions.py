@@ -365,6 +365,37 @@ def _fresh_options(question, option_history, forbidden_answer_keys, recent_wrong
             question.options = updated_options
             question.save(update_fields=["options"])
 
+    def make_distinct_from_previous(layout):
+        if not previous_layouts or layout != previous_layouts[-1]:
+            return layout
+
+        previous_layout = previous_layouts[-1]
+        previous_keys = {_normalize_answer(option) for option in previous_layout}
+        replacement = next(
+            (
+                option
+                for option in candidates
+                if _normalize_answer(option) not in previous_keys
+            ),
+            None,
+        )
+
+        if replacement:
+            varied = list(layout)
+            for index, option in enumerate(varied):
+                if _normalize_answer(option) != correct_key:
+                    varied[index] = replacement
+                    return varied
+
+        if len(layout) > 1:
+            varied = list(layout)
+            correct_index = varied.index(correct) if correct in varied else 0
+            swap_index = 0 if correct_index != 0 else 1
+            varied[correct_index], varied[swap_index] = varied[swap_index], varied[correct_index]
+            return varied
+
+        return layout
+
     best_layout = None
     best_score = -1
     attempts = max(12, len(candidates) * 2)
@@ -391,6 +422,7 @@ def _fresh_options(question, option_history, forbidden_answer_keys, recent_wrong
     if best_layout is None:
         best_layout = [correct]
 
+    best_layout = make_distinct_from_previous(best_layout)
     option_history[question.id].append(best_layout)
     return best_layout
 

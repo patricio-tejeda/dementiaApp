@@ -5,7 +5,7 @@ from django.test import TestCase
 from RAG.question_generator import _build_context, _options_too_close_to_answer
 
 from .models import AppUser, GeneratedQuestion, InputInfoPage, PatientProfile, QuestionAttempt
-from .question_sessions import build_question_session, _option_too_close_to_correct
+from .question_sessions import build_question_session, _fresh_options, _option_too_close_to_correct
 from .serializers import QuestionAttemptSerializer
 
 
@@ -161,6 +161,38 @@ class QuestionSessionTests(TestCase):
         self.assertTrue(set(reprompt_options).issubset(school_answers))
         self.assertNotIn("Tucson", first_options + reprompt_options)
         self.assertNotIn("Blue", first_options + reprompt_options)
+
+    def test_repeated_option_layout_changes_when_same_question_is_reused(self):
+        question = GeneratedQuestion.objects.create(
+            profile=self.profile,
+            question_text="What elementary school did you attend?",
+            options=["Lincoln Elementary", "Roosevelt Elementary", "Mesa Vista", "Desert Sun"],
+            correct_answer="Lincoln Elementary",
+            category="education",
+            question_type="mcq",
+        )
+        option_history = {
+            question.id: [["Lincoln Elementary", "Roosevelt Elementary", "Mesa Vista", "Desert Sun"]]
+        }
+
+        with patch("core.question_sessions.random.sample") as mock_sample, patch("core.question_sessions.random.shuffle") as mock_shuffle:
+            mock_sample.return_value = ["Roosevelt Elementary", "Mesa Vista", "Desert Sun"]
+
+            def keep_original_order(layout):
+                layout[:] = ["Lincoln Elementary", "Roosevelt Elementary", "Mesa Vista", "Desert Sun"]
+
+            mock_shuffle.side_effect = keep_original_order
+
+            options = _fresh_options(
+                question,
+                option_history,
+                forbidden_answer_keys=set(),
+                recent_wrong_answers=["Roosevelt Elementary"],
+            )
+
+        self.assertNotEqual(options, option_history[question.id][0])
+        self.assertEqual(set(options), set(option_history[question.id][0]))
+        self.assertIn("Lincoln Elementary", options)
 
     def test_name_question_only_uses_name_options(self):
         GeneratedQuestion.objects.create(
