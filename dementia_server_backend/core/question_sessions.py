@@ -1,7 +1,10 @@
 import random
+import json
+import re
 
 from django.utils import timezone
 
+from RAG.groq_client import MissingGroqAPIKeyError, build_chat_groq
 from RAG.question_generator import generate_questions_for_profile, reword_question_for_retry
 from RAG.vector_database import VectorStore
 from .models import GeneratedQuestion
@@ -9,6 +12,94 @@ from .models import GeneratedQuestion
 
 def _normalize_answer(value):
     return str(value or "").strip().lower()
+
+
+def _tokenize_answer(value):
+    normalized = re.sub(r"[^\w\s]", " ", _normalize_answer(value))
+    return {
+        token
+        for token in normalized.split()
+        if len(token) > 2
+        and token
+        not in {
+            "the",
+            "and",
+            "for",
+            "with",
+            "from",
+            "his",
+            "her",
+            "their",
+            "your",
+            "patient",
+            "degree",
+            "completed",
+            "completing",
+            "getting",
+            "earned",
+            "earning",
+            "received",
+            "receiving",
+            "university",
+            "college",
+            "school",
+            "elementary",
+            "middle",
+            "high",
+        }
+    }
+
+
+_SEMANTIC_CLUSTERS = [
+    {"graduate", "graduated", "graduating", "college", "university", "masters", "master", "degree", "law", "nursing", "school", "diploma"},
+    {"married", "wedding", "spouse", "husband", "wife"},
+    {"child", "children", "son", "daughter", "parent", "family"},
+    {"job", "career", "work", "occupation", "retired", "business"},
+    {"home", "house", "moved", "city", "town"},
+]
+_EDUCATION_ACHIEVEMENT_TERMS = {"graduate", "graduated", "graduating", "masters", "master", "degree", "diploma"}
+
+
+def _matching_semantic_clusters(value):
+    normalized = set(re.sub(r"[^\w\s]", " ", _normalize_answer(value)).split())
+    matches = []
+    for index, cluster in enumerate(_SEMANTIC_CLUSTERS):
+        if not normalized & cluster:
+            continue
+        if index == 0 and not normalized & _EDUCATION_ACHIEVEMENT_TERMS:
+            continue
+        matches.append(cluster)
+    return matches
+
+
+def _option_too_close_to_correct(option, correct):
+    option_key = _normalize_answer(option)
+    correct_key = _normalize_answer(correct)
+    if not option_key or not correct_key:
+        return True
+    if option_key == correct_key or option_key in correct_key or correct_key in option_key:
+        return True
+
+    option_tokens = _tokenize_answer(option)
+    correct_tokens = _tokenize_answer(correct)
+    if option_tokens and correct_tokens:
+        overlap = len(option_tokens & correct_tokens) / min(len(option_tokens), len(correct_tokens))
+        if overlap >= 0.5:
+            return True
+
+    correct_clusters = _matching_semantic_clusters(correct)
+    if correct_clusters and any(set(re.sub(r"[^\w\s]", " ", option_key).split()) & cluster for cluster in correct_clusters):
+        return True
+
+    return False
+
+
+def _question_topic_key(question):
+    correct = _normalize_answer(question.correct_answer)
+    if correct:
+        return correct
+    words = _tokenize_answer(question.question_text)
+    return " ".join(sorted(words)) or _normalize_answer(question.question_text)
 
 
 def _answer_kind_from_text(text):
@@ -36,6 +127,38 @@ def _answer_kind_from_text(text):
 
 def _question_answer_kind(question):
     return _answer_kind_from_text(question.question_text)
+
+
+def _answer_subtype(question):
+    text = _normalize_answer(question.question_text)
+    if "father" in text or "husband" in text or "brother" in text or "son" in text:
+        return "male first names"
+    if "mother" in text or "wife" in text or "sister" in text or "daughter" in text:
+        return "female first names"
+    if "patient name" in text or "your name" in text or "what is your name" in text:
+        return "person names"
+    kind = _question_answer_kind(question)
+    return {
+        "person_name": "person names",
+        "school": "specific school names",
+        "place": "city or place names",
+        "color": "color names",
+        "food": "food names",
+        "work": "jobs or occupations",
+        "music": "songs, artists, or music genres",
+        "activity": "hobbies or activities",
+        "number": "numbers",
+    }.get(kind, "same type as the correct answer")
+
+
+def _profile_answer_keys(profile, allowed_answers=None):
+    allowed = {_normalize_answer(answer) for answer in (allowed_answers or []) if answer}
+    keys = set()
+    for field in profile.fields.exclude(answer__exact="").exclude(answer__isnull=True):
+        key = _normalize_answer(field.answer)
+        if key and key not in allowed:
+            keys.add(key)
+    return keys
 
 
 def desired_question_bank_size(profile, minimum: int = 12) -> int:
@@ -86,14 +209,17 @@ def _question_stats(question):
 
     difficulty = 1.0
     if total == 0:
-        difficulty += 2.6
+        difficulty += 0.8
     else:
-        difficulty += wrong * 1.4
-        difficulty += (1 - (accuracy or 0)) * 4.0
-        difficulty += wrong_streak * 1.2
+        difficulty += wrong * 4.0
+        difficulty += (1 - (accuracy or 0)) * 5.5
+        difficulty += wrong_streak * 3.0
+
+    if wrong > 0:
+        difficulty += 4.0 + min(wrong, 4) * 1.5
 
     if question.reprompt_count:
-        difficulty += min(question.reprompt_count, 3) * 0.35
+        difficulty += min(question.reprompt_count, 3) * 0.2
 
     if question.question_type == "free_recall":
         difficulty += 0.4
@@ -119,41 +245,73 @@ def _weighted_sample(question_stats, count):
     return selected
 
 
-def _add_to_pool(pool, kind, answer):
-    answer = str(answer or "").strip()
-    key = _normalize_answer(answer)
-    if not key:
-        return
-    bucket = pool.setdefault(kind, [])
-    if all(_normalize_answer(existing) != key for existing in bucket):
-        bucket.append(answer)
+def _extract_json_strings(raw):
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            return [str(item).strip() for item in parsed if str(item).strip()]
+    except json.JSONDecodeError:
+        return []
+    return []
 
 
-def _profile_answer_pool(profile, questions):
-    pool = {}
+def _generate_llm_distractors(question, forbidden_answers, recent_wrong_answers=None, target_count=8):
+    correct = str(question.correct_answer or "").strip()
+    if not correct:
+        return []
 
-    for field in profile.fields.exclude(answer__exact="").exclude(answer__isnull=True):
-        kind = _answer_kind_from_text(field.title)
-        if kind != "unknown":
-            _add_to_pool(pool, kind, field.answer)
+    subtype = _answer_subtype(question)
+    wrong_answers = [answer for answer in (recent_wrong_answers or []) if answer]
+    prompt = f"""Generate fresh multiple-choice distractors for a dementia memory question.
 
-    for item in questions:
-        kind = _question_answer_kind(item)
-        if kind == "unknown":
-            continue
-        _add_to_pool(pool, kind, item.correct_answer)
-        for option in item.options or []:
-            _add_to_pool(pool, kind, option)
+Question:
+{question.question_text}
 
-    return pool
+Correct answer:
+{correct}
+
+Answer type required:
+{subtype}
+
+Rules:
+- Return ONLY a JSON array of strings.
+- Generate {target_count} plausible distractors.
+- Every distractor must be the exact same answer type as "{correct}".
+- Make every distractor clearly different from the correct answer. Do not use the same subcategory, credential, life event, wording, or achievement.
+- Do not include the correct answer.
+- Do not include any patient/profile answers from the forbidden list.
+- Do not include generic placeholders like "not sure" or "none of these".
+- If the question asks for a father's name, use male first names only.
+- If the question asks for a mother's name, use female first names only.
+- If recent wrong answers are listed, you may include them only if they match the required answer type.
+
+Forbidden patient/profile answers:
+{json.dumps(sorted(forbidden_answers), ensure_ascii=True)}
+
+Recent wrong answers that may be reused if same type:
+{json.dumps(wrong_answers, ensure_ascii=True)}
+"""
+
+    try:
+        llm = build_chat_groq("llama-3.3-70b-versatile")
+        response = llm.invoke(prompt)
+    except MissingGroqAPIKeyError:
+        return []
+    except Exception as exc:
+        print(f"[WARN] Failed to generate fresh distractors: {exc}")
+        return []
+
+    return _extract_json_strings(response.content.strip())
 
 
-def _fresh_options(question, distractor_pool, option_history):
+def _fresh_options(question, option_history, forbidden_answer_keys, recent_wrong_answers=None):
     correct = str(question.correct_answer or "").strip()
     if not correct:
         return []
 
     correct_key = _normalize_answer(correct)
+    recent_wrong_answers = [answer for answer in (recent_wrong_answers or []) if answer]
+    allowed_wrong_keys = {_normalize_answer(answer) for answer in recent_wrong_answers}
     previous_layouts = option_history.setdefault(question.id, [])
     previous_sets = {tuple(sorted(_normalize_answer(option) for option in layout)) for layout in previous_layouts}
     previous_correct_positions = [
@@ -162,26 +320,50 @@ def _fresh_options(question, distractor_pool, option_history):
         if correct in layout
     ]
 
+    subtype = _answer_subtype(question)
     base_distractors = [
         str(option).strip()
         for option in (question.options or [])
-        if _normalize_answer(option) and _normalize_answer(option) != correct_key
+        if _normalize_answer(option)
+        and _normalize_answer(option) != correct_key
+        and not _option_too_close_to_correct(option, correct)
+        and (
+            _normalize_answer(option) not in forbidden_answer_keys
+            or _normalize_answer(option) in allowed_wrong_keys
+        )
     ]
-    kind = _question_answer_kind(question)
-    same_kind_pool = distractor_pool.get(kind, []) if kind != "unknown" else []
-    extra_distractors = [
-        str(option).strip()
-        for option in same_kind_pool
-        if _normalize_answer(option) and _normalize_answer(option) != correct_key
-    ]
+
+    generated_distractors = _generate_llm_distractors(
+        question,
+        forbidden_answer_keys | {correct_key},
+        recent_wrong_answers=recent_wrong_answers,
+        target_count=8,
+    ) if len(base_distractors) < 6 or len(previous_layouts) > 0 else []
 
     candidates = []
     seen = set()
-    for option in [*base_distractors, *extra_distractors]:
+    if subtype in {"male first names", "female first names"}:
+        candidate_sources = [*recent_wrong_answers, *generated_distractors, *base_distractors]
+    else:
+        candidate_sources = [*recent_wrong_answers, *base_distractors, *generated_distractors]
+
+    for option in candidate_sources:
         key = _normalize_answer(option)
-        if key and key not in seen and key != correct_key:
+        if (
+            key
+            and key not in seen
+            and key != correct_key
+            and not _option_too_close_to_correct(option, correct)
+            and (key not in forbidden_answer_keys or key in allowed_wrong_keys)
+        ):
             seen.add(key)
             candidates.append(option)
+
+    if len(candidates) >= 6:
+        updated_options = [correct, *candidates[:8]]
+        if question.options != updated_options:
+            question.options = updated_options
+            question.save(update_fields=["options"])
 
     best_layout = None
     best_score = -1
@@ -213,11 +395,16 @@ def _fresh_options(question, distractor_pool, option_history):
     return best_layout
 
 
-def _serialize_for_session(question, distractor_pool, option_history, override_text=None, is_reprompt=False):
+def _serialize_for_session(question, option_history, forbidden_answer_keys, recent_wrong_answers=None, override_text=None, is_reprompt=False):
     return {
         "id": question.id,
         "question_text": override_text or question.question_text,
-        "options": _fresh_options(question, distractor_pool, option_history),
+        "options": _fresh_options(
+            question,
+            option_history,
+            forbidden_answer_keys,
+            recent_wrong_answers=recent_wrong_answers,
+        ),
         "correct_answer": question.correct_answer,
         "category": question.category,
         "question_type": question.question_type,
@@ -238,7 +425,6 @@ def build_question_session(profile, mode="practice", count=10, ensure_bank=False
     if not questions:
         return []
 
-    distractor_pool = _profile_answer_pool(profile, questions)
     option_history = {}
     stats_by_question = [{"question": q, "stats": _question_stats(q)} for q in questions]
     reprompt_slots = 0
@@ -246,7 +432,53 @@ def build_question_session(profile, mode="practice", count=10, ensure_bank=False
         reprompt_slots = min(2, max(1, count // 4))
 
     base_count = max(1, count - reprompt_slots)
-    selected = _weighted_sample(stats_by_question, base_count)
+    if mode == "adaptive":
+        struggled = [item for item in stats_by_question if item["stats"]["wrong"] > 0 or item["stats"]["wrong_streak"] > 0]
+        fresh_or_review = [item for item in stats_by_question if item not in struggled]
+        selected = []
+        seen_topics = set()
+        for item in sorted(struggled, key=lambda entry: entry["stats"]["difficulty"], reverse=True):
+            topic_key = _question_topic_key(item["question"])
+            if topic_key in seen_topics:
+                continue
+            selected.append(item)
+            seen_topics.add(topic_key)
+            if len(selected) >= base_count:
+                break
+        for item in _weighted_sample(fresh_or_review, base_count - len(selected)):
+            topic_key = _question_topic_key(item["question"])
+            if topic_key in seen_topics:
+                continue
+            selected.append(item)
+            seen_topics.add(topic_key)
+            if len(selected) >= base_count:
+                break
+    else:
+        selected = []
+        seen_topics = set()
+        for item in _weighted_sample(stats_by_question, base_count):
+            topic_key = _question_topic_key(item["question"])
+            if topic_key in seen_topics:
+                continue
+            selected.append(item)
+            seen_topics.add(topic_key)
+
+    if len(selected) < base_count:
+        selected_ids = {item["question"].id for item in selected}
+        selected_topics = {_question_topic_key(item["question"]) for item in selected}
+        remaining = [item for item in stats_by_question if item["question"].id not in selected_ids]
+        for item in _weighted_sample(remaining, len(remaining)):
+            topic_key = _question_topic_key(item["question"])
+            if topic_key in selected_topics:
+                continue
+            selected.append(item)
+            selected_topics.add(topic_key)
+            if len(selected) >= base_count:
+                break
+        if len(selected) < base_count:
+            selected_ids = {item["question"].id for item in selected}
+            remaining = [item for item in stats_by_question if item["question"].id not in selected_ids]
+            selected.extend(_weighted_sample(remaining, base_count - len(selected)))
 
     if mode == "practice":
         random.shuffle(selected)
@@ -254,7 +486,18 @@ def build_question_session(profile, mode="practice", count=10, ensure_bank=False
         selected.sort(key=lambda item: item["stats"]["difficulty"], reverse=True)
 
     session_questions = [
-        _serialize_for_session(item["question"], distractor_pool, option_history)
+        _serialize_for_session(
+            item["question"],
+            option_history,
+            _profile_answer_keys(
+                profile,
+                allowed_answers=[
+                    item["question"].correct_answer,
+                    *item["stats"]["recent_wrong_answers"],
+                ],
+            ),
+            recent_wrong_answers=item["stats"]["recent_wrong_answers"],
+        )
         for item in selected
     ]
 
@@ -277,13 +520,23 @@ def build_question_session(profile, mode="practice", count=10, ensure_bank=False
                 (index for index, item in enumerate(session_questions) if item["id"] == question.id),
                 len(session_questions) - 1,
             )
-            insert_at = min(len(session_questions), original_index + 3)
+            intervening_questions = 1 if candidate["stats"]["wrong"] >= 2 or candidate["stats"]["wrong_streak"] >= 2 else 2
+            insert_at = min(len(session_questions), original_index + intervening_questions + 1)
+            if insert_at <= original_index + 1:
+                continue
             session_questions.insert(
                 insert_at,
                 _serialize_for_session(
                     question,
-                    distractor_pool,
                     option_history,
+                    _profile_answer_keys(
+                        profile,
+                        allowed_answers=[
+                            question.correct_answer,
+                            *candidate["stats"]["recent_wrong_answers"],
+                        ],
+                    ),
+                    recent_wrong_answers=candidate["stats"]["recent_wrong_answers"],
                     override_text=rewritten,
                     is_reprompt=True,
                 ),

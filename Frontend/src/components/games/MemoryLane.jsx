@@ -75,12 +75,14 @@ function toLaneQuestion(question, index) {
       ];
 
   return {
-    id: `memory-q-${question.id}`,
+    id: `memory-q-${question.id}-${index}`,
     sourceQuestionId: question.id,
     prompt: caregiverPrompt(question.question_text),
     correctAnswer: correct || choices[0].text,
     choices: shuffle(choices),
     displayNumber: index + 1,
+    isRetry: Boolean(question.is_reprompt),
+    timesWrong: Number(question.times_wrong || 0),
   };
 }
 
@@ -188,20 +190,21 @@ useAutoSpeak(speechText, speechEnabled, autoSpeak);
     if (isCorrect) {
       resolvedRef.current = true;
       setFeedback("correct");
-      setTimeout(() => onCorrect(), 600);
+      setTimeout(() => onCorrect(selectedChoice), 600);
       return;
     }
 
     if (attempt < maxAttempts) {
       setFeedback("retry");
       setAttempt((prev) => prev + 1);
+      setSelectedChoice("");
       setTimeout(() => setFeedback(null), 1200);
       return;
     }
 
     setFeedback("wrong-final");
     resolvedRef.current = true;
-    setTimeout(() => onExhausted(), 1400);
+    setTimeout(() => onExhausted(selectedChoice), 1400);
   };
 
   return (
@@ -449,44 +452,59 @@ export default function MemoryLane() {
     });
   };
 
-  const handleCorrect = useCallback(() => {
+  const recordAttempt = useCallback((question, selectedAnswer) => {
+    const sourceKey = question?.sourceQuestionId || question?.id;
+    if (typeof sourceKey !== "number" || !selectedAnswer) return;
+
+    apiFetch(`/api/attempts/`, {
+      method: "POST",
+      body: JSON.stringify({
+        question: sourceKey,
+        selected_answer: selectedAnswer,
+      }),
+    }).catch(() => {});
+  }, []);
+
+  const handleCorrect = useCallback((selectedAnswer) => {
     if (!activeQ) return;
+    recordAttempt(activeQ, selectedAnswer || activeQ.correctAnswer);
     setCompleted((prev) => (prev.includes(activeQ.id) ? prev : [...prev, activeQ.id]));
     setCurrentStep((prev) => Math.max(prev, activeQ.displayNumber));
     setActiveQ(null);
     setShowConfetti(true);
-  }, [activeQ]);
+  }, [activeQ, recordAttempt]);
 
-  const handleExhausted = useCallback(() => {
+  const handleExhausted = useCallback((selectedAnswer) => {
     if (!activeQ) return;
+    recordAttempt(activeQ, selectedAnswer);
 
     const sourceKey = activeQ.sourceQuestionId || activeQ.id;
     const hasRetryQueued = scheduledRetryKeys.includes(sourceKey);
     const isRetryPrompt = Boolean(activeQ.isRetry);
 
     if (!hasRetryQueued && !isRetryPrompt) {
-      if (typeof sourceKey === "number") {
-        apiFetch(`/api/questions/${sourceKey}/record_reprompt/`, {
-          method: "POST",
-          body: JSON.stringify({}),
-        }).catch(() => {});
-      }
-      setQuestions((prev) => [
-        ...prev,
-        {
+      setQuestions((prev) => {
+        const newWrongCount = Number(activeQ.timesWrong || 0) + 1;
+        const delay = newWrongCount >= 2 ? 1 : 2;
+        const retryIndex = Math.min(prev.length, activeQ.displayNumber + delay);
+        const retryQuestion = {
           ...activeQ,
-          id: `${sourceKey}-retry`,
+          id: `${sourceKey}-retry-${Date.now()}`,
           sourceQuestionId: sourceKey,
           isRetry: true,
-        },
-      ]);
+          timesWrong: newWrongCount,
+        };
+        const next = [...prev];
+        next.splice(retryIndex, 0, retryQuestion);
+        return next;
+      });
       setScheduledRetryKeys((prev) => [...prev, sourceKey]);
     }
 
     setCompleted((prev) => (prev.includes(activeQ.id) ? prev : [...prev, activeQ.id]));
     setCurrentStep((prev) => Math.max(prev, activeQ.displayNumber));
     setActiveQ(null);
-  }, [activeQ, scheduledRetryKeys]);
+  }, [activeQ, recordAttempt, scheduledRetryKeys]);
 
   const totalRows = Math.max(1, Math.ceil(Math.max(questions.length, 1) / 6));
   const svgHeight = 110 + totalRows * 120;

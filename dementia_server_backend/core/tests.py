@@ -2,10 +2,10 @@ from unittest.mock import patch
 
 from django.test import TestCase
 
-from RAG.question_generator import _build_context
+from RAG.question_generator import _build_context, _options_too_close_to_answer
 
 from .models import AppUser, GeneratedQuestion, InputInfoPage, PatientProfile, QuestionAttempt
-from .question_sessions import build_question_session
+from .question_sessions import build_question_session, _option_too_close_to_correct
 from .serializers import QuestionAttemptSerializer
 
 
@@ -31,7 +31,15 @@ class QuestionSessionTests(TestCase):
         hard_question = GeneratedQuestion.objects.create(
             profile=self.profile,
             question_text="What elementary school did you attend?",
-            options=["Lincoln Elementary", "Roosevelt Elementary", "Mesa Vista", "Desert Sun"],
+            options=[
+                "Lincoln Elementary",
+                "Roosevelt Elementary",
+                "Mesa Vista",
+                "Desert Sun",
+                "Central Elementary",
+                "Oak Grove Elementary",
+                "Sunrise Elementary",
+            ],
             correct_answer="Lincoln Elementary",
             category="education",
             question_type="mcq",
@@ -81,6 +89,30 @@ class QuestionSessionTests(TestCase):
             category="education",
             question_type="mcq",
         )
+        GeneratedQuestion.objects.create(
+            profile=self.profile,
+            question_text="What is your favorite color?",
+            options=["Blue", "Green", "Red", "Purple"],
+            correct_answer="Blue",
+            category="personal",
+            question_type="mcq",
+        )
+        GeneratedQuestion.objects.create(
+            profile=self.profile,
+            question_text="What city did you grow up in?",
+            options=["Tucson", "Phoenix", "Mesa", "Flagstaff"],
+            correct_answer="Tucson",
+            category="personal",
+            question_type="mcq",
+        )
+        GeneratedQuestion.objects.create(
+            profile=self.profile,
+            question_text="What is your favorite food?",
+            options=["Vanilla", "Chocolate", "Strawberry", "Mint"],
+            correct_answer="Vanilla",
+            category="personal",
+            question_type="mcq",
+        )
 
         for title, answer in [
             ("High School", "Central High"),
@@ -119,6 +151,9 @@ class QuestionSessionTests(TestCase):
             "Roosevelt Elementary",
             "Mesa Vista",
             "Desert Sun",
+            "Central Elementary",
+            "Oak Grove Elementary",
+            "Sunrise Elementary",
             "Central High",
             "University of Arizona",
         }
@@ -158,6 +193,105 @@ class QuestionSessionTests(TestCase):
         self.assertNotIn("Tucson", options)
         self.assertNotIn("Blue", options)
         self.assertNotIn("Vanilla", options)
+
+    def test_runtime_filters_education_near_miss_distractors(self):
+        self.assertTrue(
+            _option_too_close_to_correct(
+                "Getting a nursing master's degree",
+                "Graduating college",
+            )
+        )
+        self.assertTrue(
+            _option_too_close_to_correct(
+                "Completing law school",
+                "Graduating college",
+            )
+        )
+        self.assertFalse(
+            _option_too_close_to_correct(
+                "Running a community fundraiser",
+                "Graduating college",
+            )
+        )
+        self.assertFalse(
+            _option_too_close_to_correct(
+                "Stanford University",
+                "University of Arizona",
+            )
+        )
+
+    def test_adaptive_session_prioritizes_wrong_questions(self):
+        wrong_question = GeneratedQuestion.objects.create(
+            profile=self.profile,
+            question_text="What was a past accomplishment?",
+            options=[
+                "Graduating college",
+                "Running a community fundraiser",
+                "Publishing a cookbook",
+                "Starting a garden club",
+            ],
+            correct_answer="Graduating college",
+            category="personal",
+            question_type="mcq",
+        )
+        GeneratedQuestion.objects.create(
+            profile=self.profile,
+            question_text="What is your favorite color?",
+            options=["Blue", "Green", "Red", "Purple"],
+            correct_answer="Blue",
+            category="personal",
+            question_type="mcq",
+        )
+        GeneratedQuestion.objects.create(
+            profile=self.profile,
+            question_text="What city did you grow up in?",
+            options=["Tucson", "Phoenix", "Mesa", "Flagstaff"],
+            correct_answer="Tucson",
+            category="personal",
+            question_type="mcq",
+        )
+
+        QuestionAttempt.objects.create(
+            question=wrong_question,
+            selected_answer="Publishing a cookbook",
+            is_correct=False,
+        )
+
+        session = build_question_session(self.profile, mode="adaptive", count=3)
+
+        self.assertEqual(session[0]["id"], wrong_question.id)
+
+    def test_session_does_not_select_duplicate_answer_topics_as_base_questions(self):
+        first = GeneratedQuestion.objects.create(
+            profile=self.profile,
+            question_text="What accomplishment made you proud?",
+            options=["Graduating college", "Opening a small shop", "Coaching a team", "Winning a race"],
+            correct_answer="Graduating college",
+            category="personal",
+            question_type="mcq",
+        )
+        duplicate = GeneratedQuestion.objects.create(
+            profile=self.profile,
+            question_text="Which life achievement should we remember?",
+            options=["Graduating college", "Opening a small shop", "Coaching a team", "Winning a race"],
+            correct_answer="Graduating college",
+            category="personal",
+            question_type="mcq",
+        )
+        other = GeneratedQuestion.objects.create(
+            profile=self.profile,
+            question_text="What is your favorite color?",
+            options=["Blue", "Green", "Red", "Purple"],
+            correct_answer="Blue",
+            category="personal",
+            question_type="mcq",
+        )
+
+        session = build_question_session(self.profile, mode="practice", count=2)
+        selected_ids = {item["id"] for item in session}
+
+        self.assertIn(other.id, selected_ids)
+        self.assertEqual(len(selected_ids & {first.id, duplicate.id}), 1)
 
 
 class QuestionAttemptSerializerTests(TestCase):
@@ -234,3 +368,18 @@ class QuestionGenerationContextTests(TestCase):
 
         self.assertIn("Tucson", context)
         self.assertNotIn("Phoenix", context)
+
+
+class QuestionGenerationValidationTests(TestCase):
+    def test_generation_rejects_close_accomplishment_options(self):
+        self.assertTrue(
+            _options_too_close_to_answer(
+                [
+                    "Graduating college",
+                    "Getting a nursing master's degree",
+                    "Getting a business master's degree",
+                    "Completing law school",
+                ],
+                "Graduating college",
+            )
+        )

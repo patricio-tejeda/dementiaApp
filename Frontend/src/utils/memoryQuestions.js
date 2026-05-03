@@ -1,20 +1,20 @@
 const MEMORY_QUESTIONS_KEY = "memory_lane_questions";
 const MIN_MEMORY_QUESTIONS = 10;
 
-const FALLBACK_FACTS = [
-  { title: "Patient's favorite color", answer: "Blue" },
-  { title: "Patient's hometown", answer: "Tucson" },
-  { title: "Patient's elementary school", answer: "Lincoln Elementary" },
-  { title: "Patient's middle school", answer: "Washington Middle" },
-  { title: "Patient's high school", answer: "Central High" },
-  { title: "Patient's college", answer: "University of Arizona" },
-  { title: "Patient's degree title", answer: "Psychology" },
-  { title: "Patients' mother's name", answer: "Maria" },
-  { title: "Patients' father's name", answer: "Jose" },
-  { title: "Favorite ice cream", answer: "Vanilla" },
-  { title: "Best friend", answer: "Sarah" },
-  { title: "First job", answer: "Cashier" },
-];
+// const FALLBACK_FACTS = [
+//   { title: "Patient's favorite color", answer: "Blue" },
+//   { title: "Patient's hometown", answer: "Tucson" },
+//   { title: "Patient's elementary school", answer: "Lincoln Elementary" },
+//   { title: "Patient's middle school", answer: "Washington Middle" },
+//   { title: "Patient's high school", answer: "Central High" },
+//   { title: "Patient's college", answer: "University of Arizona" },
+//   { title: "Patient's degree title", answer: "Psychology" },
+//   { title: "Patients' mother's name", answer: "Maria" },
+//   { title: "Patients' father's name", answer: "Jose" },
+//   { title: "Favorite ice cream", answer: "Vanilla" },
+//   { title: "Best friend", answer: "Sarah" },
+//   { title: "First job", answer: "Cashier" },
+// ];
 
 function shuffle(items) {
   const copy = [...items];

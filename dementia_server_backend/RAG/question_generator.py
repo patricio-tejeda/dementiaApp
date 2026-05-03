@@ -22,6 +22,87 @@ def _normalize(s: str) -> str:
     return s
 
 
+def _tokenize_answer(value: str) -> set[str]:
+    normalized = _normalize(value)
+    return {
+        token
+        for token in normalized.split()
+        if len(token) > 2
+        and token
+        not in {
+            "the",
+            "and",
+            "for",
+            "with",
+            "from",
+            "his",
+            "her",
+            "their",
+            "your",
+            "patient",
+            "degree",
+            "completed",
+            "completing",
+            "getting",
+            "earned",
+            "earning",
+            "received",
+            "receiving",
+            "university",
+            "college",
+            "school",
+            "elementary",
+            "middle",
+            "high",
+        }
+    }
+
+
+_SEMANTIC_CLUSTERS = [
+    {"graduate", "graduated", "graduating", "college", "university", "masters", "master", "degree", "law", "nursing", "school", "diploma"},
+    {"married", "wedding", "spouse", "husband", "wife"},
+    {"child", "children", "son", "daughter", "parent", "family"},
+    {"job", "career", "work", "occupation", "retired", "business"},
+    {"home", "house", "moved", "city", "town"},
+]
+_EDUCATION_ACHIEVEMENT_TERMS = {"graduate", "graduated", "graduating", "masters", "master", "degree", "diploma"}
+
+
+def _matching_semantic_clusters(value: str) -> list[set[str]]:
+    tokens = set(_normalize(value).split())
+    matches = []
+    for index, cluster in enumerate(_SEMANTIC_CLUSTERS):
+        if not tokens & cluster:
+            continue
+        if index == 0 and not tokens & _EDUCATION_ACHIEVEMENT_TERMS:
+            continue
+        matches.append(cluster)
+    return matches
+
+
+def _option_too_close_to_answer(option: str, correct_answer: str) -> bool:
+    option_norm = _normalize(option)
+    correct_norm = _normalize(correct_answer)
+    if not option_norm or not correct_norm:
+        return True
+    if option_norm == correct_norm or option_norm in correct_norm or correct_norm in option_norm:
+        return True
+
+    option_tokens = _tokenize_answer(option)
+    correct_tokens = _tokenize_answer(correct_answer)
+    if option_tokens and correct_tokens:
+        overlap = len(option_tokens & correct_tokens) / min(len(option_tokens), len(correct_tokens))
+        if overlap >= 0.5:
+            return True
+
+    correct_clusters = _matching_semantic_clusters(correct_answer)
+    option_token_set = set(option_norm.split())
+    if correct_clusters and any(option_token_set & cluster for cluster in correct_clusters):
+        return True
+
+    return False
+
+
 def _is_near_duplicate_question(new_q: str, existing_qs: list) -> bool:
     """Catch rephrased duplicates, not just exact string matches."""
     new_norm = _normalize(new_q)
@@ -65,6 +146,14 @@ def _options_have_duplicates(options: list) -> bool:
                 return True
 
     return False
+
+
+def _options_too_close_to_answer(options: list, correct_answer: str) -> bool:
+    return any(
+        _option_too_close_to_answer(option, correct_answer)
+        for option in options
+        if _normalize(option) != _normalize(correct_answer)
+    )
 
 
 def _answer_grounded_in_context(correct_answer: str, context: str) -> bool:
@@ -354,8 +443,9 @@ CRITICAL RULES:
 4. The "options" array must contain 4 to 8 choices:
    - The SAME TYPE of thing (all person names, all specific school names, all colors, all cities, etc.).
    - DISTINCT — no two options may refer to the same thing. "UofA" and "University of Arizona" are the same answer. "High School" and "Middle School" are generic categories, NOT school names.
+   - CLEARLY DIFFERENT from the correct answer. Do not make wrong options that are near-misses, variants, or the same kind of accomplishment/event/credential as the answer.
    - Plausible — real examples of that category, not placeholder words.
-   - Prefer 6 choices when possible so games can vary distractors each time the question appears.
+   - Prefer 8 choices when possible so games can vary distractors each time the question appears.
 5. NEVER ask about dates, times, or "when" something happened.
 6. Every question must be about a DIFFERENT topic than the existing questions listed below. Do not rephrase them.
 7. Respond with ONLY a JSON array. No prose, no markdown.
@@ -386,6 +476,7 @@ BAD examples (never create these):
 - Question: "What color is your favorite sports team?" — team not in patient info, HALLUCINATED.
 - Options: ["University High", "High School", "Middle School", "Elementary School"] — only one real school name, rest are generic categories.
 - Options: ["UofA", "University of Arizona", "U of A", "Arizona"] — all four refer to the same school.
+- Correct answer: "Graduating college"; Bad options: ["Getting a nursing master's degree", "Getting a business master's degree", "Completing law school"] — all are too close because they are education credentials.
 - Question: "What color is your favorite?" when "What is your favorite color?" already exists — REPHRASED DUPLICATE.
 
 GOOD examples:
@@ -471,6 +562,10 @@ Generate {batch_size} NEW questions grounded strictly in the Patient Information
 
             if _options_have_duplicates(q["options"]):
                 print(f"[WARN] Skipping — options have duplicates/variations: {q['options']}")
+                continue
+
+            if _options_too_close_to_answer(q["options"], q["correct_answer"]):
+                print(f"[WARN] Skipping — options too close to answer '{q['correct_answer']}': {q['options']}")
                 continue
 
             styled_question = _caregiver_style_question(q["question"])
